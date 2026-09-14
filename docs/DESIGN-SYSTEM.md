@@ -1196,16 +1196,26 @@ Forcing pages to remember `shrink-0` actually failed: after fixing one screen, t
 2. **Work area height is `min(content, remaining space)`.** Flex child default (`0 1 auto`) + `min-h-0` expresses this. Using `flex-1` creates a 500px empty gap with no one filling it in short lists. Columns scroll inside only when overflowing.
 3. **The 2-column gate is `xl` (1280)** — enabling 2 columns at `lg` (1024) consumes 600px for the evidence column, crushing the list to 430px and truncating concept names. **Truncated lists are not decision material** (just as truncated diffs are not evidence). 1024–1279 stacks vertically.
 
-### Tab strip tokens (`--tabbar-*`, 2026-09-05)
+### Shared document tabs (`TabBar`, `--tabbar-*`, revised 2026-09-14)
 
-One underline tab bar serves `/ontology/insights` and the project detail page
-(`src/shared/ui/tab-bar.tsx`), and the docs destination has its own strip of open
-documents. They answer one question — *which of these am I looking at, and is there more
-of them than fits* — so the width that answers the second half is one token.
+One `TabBar` serves seven panel-navigation surfaces: six document sections (Library
+workspace, Harness, Ontology Insights, MCP, project detail, and Analysis) plus the agent
+inbox's To do / Results / History categories. Other tablists — closable open-file tabs,
+preview/edit modes, and search filters — have different jobs and do not inherit this
+treatment by role alone.
+
+The shared strip answers two questions: *which document section am I looking at, and is
+there more than fits?* Its tabs are compact adjacent click areas on one flat content
+boundary. The selected tab has a neutral elevated surface, a clear top and side boundary,
+rounded chip-step top corners, and an indigo top edge. Inactive labels use secondary ink
+and reveal an overlay-1 surface on hover. Navigation labels use the sans body step; engraved
+counts stay on the smaller mono label step. There is no outer pill or segmented-control
+container: the earlier large segmented treatment grouped the choices but made a separate
+control float inside the header instead of connecting the selected tab to its content.
 
 | Token | Value | What it defines |
 |---|---|---|
-| `--tabbar-underline` | 2px | Active-tab underline thickness. The only state marker: no pill, no fill, no colour badge |
+| `--tabbar-underline` | 2px | Indigo selected-tab top edge; surface and side boundaries also carry selection |
 | `--tabbar-edge-fade` | 22px | Overflow edge-fade mask width. Mask alpha only — no colour, no glow, no motion, so reduced-motion is unaffected |
 
 `--docs-tab-edge-fade` is now an alias of `--tabbar-edge-fade` at the same 22px. It kept
@@ -1225,15 +1235,15 @@ seven tabs):
    every label onto two lines at 390 and the underline stopped sitting under one tab.
 2. The active tab is scrolled into view on mount **and on resize**. Arriving at
    `?tab=<last>` at en/390 left the strip at `scrollLeft` 0 with the selected tab 433px
-   past the right edge — the underline, the only marker of which tab is selected, was not
-   on screen. Resize is the other way it leaves the viewport, and rotating a phone is not a
-   remount.
-3. `items-end` on the tab, because `atlas-touch-floor` grows the box under a coarse
-   pointer and the underline rides its bottom edge. Baseline alignment pinned the label to
-   the top of the 44px tab and left the active underline **26px** below its own word —
-   further than the label is tall, and more than twice the 10px `pb-2.5` it keeps at 28px
-   on a mouse. A marker that far from its label stops reading as that label's marker. Both
-   children are one `text-label` line, so at the mouse height the result is unchanged.
+   past the right edge. Resize is the other way it leaves the viewport, and rotating a
+   phone is not a remount.
+3. A md control minimum on fine pointers and `atlas-touch-floor` on coarse pointers. The
+   actual tab box grows to 44px without a pseudo-element, so compact neighboring tabs never
+   receive overlapping hit areas. It may also grow past that minimum when browser text size
+   enlarges its line box: at a true 32px root, `text-body` has 40px leading and the tab grows
+   to contain it instead of clipping or painting through the selected boundary. `items-center`
+   keeps the label tied to its selected surface at every height. Label and count use explicit
+   body/label leading pairs and share one center line across sans and monospace glyphs.
 
 ### Caps tracking is a Latin device (owner, 2026-09-06)
 
@@ -2951,7 +2961,7 @@ The previous sentence (*"Heights outside this table are deviations"*) omitted th
 stacked items, it captures **the tile inside**, not the outer sum — trying to do so would let label character count dictate specs, causing the ladder to violate its own rule 1 (*"padding must not define height"*).
 **Scope — this table applies to «single-line horizontal» controls (2026-08-03 system log).**
 Applicable targets are only single-line shapes (`chip`·`pill`·`segment`·`row`·`card`) and squares
-(`icon`). **Vertical 2-axis surfaces are not in this table** — `tile` shapes, and controls stacked like NavRail items (icon above, label below) have their height defined by content and chrome geometry tokens (`--app-nav-rail-tile-*`). A NavRail item rendering at 62px is not a ladder deviation but **out of scope** (sum of tile 32px + label + spacing). As the rule audit noted, the phrase "outside this table is deviation" was undeterminable without specifying which shapes it applied to — this paragraph is that scope declaration. Underline tabs (`tab-bar`) are also out of scope as they are baseline-aligned surfaces, not boxes; however, the note that their height (measured 29px) is outside the lexicon remains unresolved (see "Next" below).
+(`icon`). **Vertical 2-axis surfaces are not in this table** — `tile` shapes, and controls stacked like NavRail items (icon above, label below) have their height defined by content and chrome geometry tokens (`--app-nav-rail-tile-*`). A NavRail item rendering at 62px is not a ladder deviation but **out of scope** (sum of tile 32px + label + spacing). As the rule audit noted, the phrase "outside this table is deviation" was undeterminable without specifying which shapes it applied to — this paragraph is that scope declaration. The connected `TabBar` is a single-line horizontal control in scope: its `--control-h-md` minimum is 32px on a fine pointer and 44px through `atlas-touch-floor` on a coarse pointer, while enlarged text may grow the box above that floor.
 
 **`xs` (micro tier) is not a height step (2026-08-03).** The value layer's `size: 'xs'`
 keeps the 24 floor (`min-h-6`) and only lowers **inset, type, and radius** to the micro tier (chip: `px-1.5 py-0.5`/caption/`rounded-micro`. Outside chips, it is an alias for `sm` — no consumers invent values). The reason for not creating a step below 24 is the first line of the table above: below WCAG 2.5.8 floor is not a "small step" but non-compliance. Evidence is the three-round continuous record in the ratchet ledger: "no step below sm" (full sweep 14 · 9 files).

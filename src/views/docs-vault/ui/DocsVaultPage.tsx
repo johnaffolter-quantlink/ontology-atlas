@@ -109,6 +109,7 @@ import {
   shouldDeferDocsVaultDefaultSelection,
   shouldShowSampleWelcomeNote,
   type DocsVaultCollection,
+  type DocsVaultDocCollection,
   isArchitectureProfile,} from '../lib/docs-vault-collection';
 import {
   buildDocsVaultHref,
@@ -194,7 +195,11 @@ import {
   parseTopologyReturnMarker,
 } from "@/entities/knowledge-graph";
 
-function DocsVaultContent() {
+function DocsVaultContent({
+  initialCollection,
+}: {
+  initialCollection: DocsVaultDocCollection;
+}) {
   const reducedMotion = usePrefersReducedMotion();
   const t = useTranslations('docsVault');
   const locale = useLocale();
@@ -289,7 +294,7 @@ function DocsVaultContent() {
   const [sampleWelcomeDismissed, setSampleWelcomeDismissed] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [docCollection, setDocCollection] =
-    useState<DocsVaultCollection>('guides');
+    useState<DocsVaultCollection>(initialCollection);
   const [treeSort, setTreeSort] = useState<DocsTreeSort>(queryTreeSort);
   const [treeGroup, setTreeGroup] = useState<DocsTreeGroup>(queryTreeGroup);
   // `?intent=local` is the entry query of the landing CTA "open my markdown folder".
@@ -1589,11 +1594,11 @@ function DocsVaultContent() {
     if (initialCollectionResolvedRef.current) return;
     if (manifest.docs.length === 0) return;
     initialCollectionResolvedRef.current = true;
-    const resolved = resolveInitialDocsCollection(manifest.docs);
+    const resolved = resolveInitialDocsCollection(manifest.docs, initialCollection);
     if (resolved !== docCollection) {
       scheduleStateSync(() => setDocCollection(resolved));
     }
-  }, [docCollection, manifest.docs]);
+  }, [docCollection, initialCollection, manifest.docs]);
 
   useEffect(() => {
     if (!selectedDoc) return;
@@ -2122,8 +2127,8 @@ function DocsVaultContent() {
           "where am I", and the rail's map destination (→ /topology) owns the way back, so this
           row's back link was duplicate navigation. That recovers 32px of vertical space; the one
           thing the rail cannot do — returning to the insights review the user came from — moved
-          into the header's zone-l (the insightsReturnTab chip below). The "docs" identity is kept
-          as an sr-only h1. */}
+          into the header's zone-l (the insightsReturnTab chip below). The Ontology panel keeps
+          its page identity as an sr-only h1. */}
       {/* Header three zones: [zone-l identity] [zone-c tabs] [zone-r tools]. The macOS download
           button was removed here entirely — it is owned by the read-only sample banner and
           /download alone. */}
@@ -2900,7 +2905,12 @@ function firstReadableSlug<T extends { slug: string; frontmatter: Record<string,
   return docs.find((doc) => !isArchitectureProfile(doc))?.slug;
 }
 
-export function DocsVaultPage() {
+export function DocsVaultPage({
+  initialCollection = 'guides',
+}: {
+  /** The collection a no-slug entry opens. Explicit slugs and later choices still win. */
+  initialCollection?: DocsVaultDocCollection;
+} = {}) {
   // Local-first core (`.claude/rules/local-first.md` §1) — reaching the vault picker passes through
   // no auth gate. The user's local disk is the source of truth.
   return (
@@ -2909,7 +2919,7 @@ export function DocsVaultPage() {
           prerendered HTML is this fallback — null would make the deployed docs surface start as a black
           screen with only the rail. */}
       <Suspense fallback={<RouteLoadingFallback />}>
-        <DocsVaultContent />
+        <DocsVaultContent initialCollection={initialCollection} />
       </Suspense>
     </VaultSourceHydrationBoundary>
   );

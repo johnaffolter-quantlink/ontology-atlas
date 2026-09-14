@@ -15,6 +15,9 @@ describe("Library work receipts", () => {
     </NextIntlClientProvider>);
     expect(screen.getByTestId("library-work-current")).toHaveTextContent("Waiting for permission");
     expect(screen.getByTestId("library-work-current")).not.toHaveTextContent("File changed");
+    expect(screen.getByTestId("library-work-history-toggle")).toHaveTextContent(/Recent\s*1/);
+    expect(screen.getByTestId("library-work-history-toggle")).not.toHaveTextContent("wiki/roadmap");
+    fireEvent.click(screen.getByTestId("library-work-history-toggle"));
     fireEvent.click(screen.getByRole("button", { name: /File changed.*wiki\/roadmap/ }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "wiki", ref: "wiki/roadmap" });
   });
@@ -25,7 +28,35 @@ describe("Library work receipts", () => {
         recent: [{ id: "e", kind: "error", phase: "complete", target: null, at: 0 }],
       }} />
     </NextIntlClientProvider>);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Failed/ })).not.toBeInTheDocument();
     expect(screen.getByTestId("library-work-activity")).toHaveTextContent("Failed");
+  });
+
+  it("owns Escape when focus stays on the reader, closes history, and returns focus to its trigger", () => {
+    const underlyingEscape = vi.fn();
+    window.addEventListener("keydown", underlyingEscape);
+    render(
+      <div data-testid="library-reader" tabIndex={-1} onKeyDown={underlyingEscape}>
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <LibraryWorkActivityStrip onSelect={vi.fn()} activity={{ isActive: false, current: null,
+            recent: [{ id: "w", kind: "write", phase: "complete", target: { kind: "wiki", ref: "wiki/roadmap" }, at: 0 }],
+          }} />
+        </NextIntlClientProvider>
+      </div>,
+    );
+    const trigger = screen.getByTestId("library-work-history-toggle");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    const reader = screen.getByTestId("library-reader");
+    reader.focus();
+    expect(reader).toHaveFocus();
+    const propagated = fireEvent.keyDown(reader, { key: "Escape" });
+
+    expect(propagated).toBe(false);
+    expect(underlyingEscape).not.toHaveBeenCalled();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+    window.removeEventListener("keydown", underlyingEscape);
   });
 });
