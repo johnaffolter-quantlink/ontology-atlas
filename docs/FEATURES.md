@@ -1,7 +1,7 @@
 # FEATURES — ontology-atlas
 
 > Complete inventory of features users can **actually use right now**.
-> Last updated: 2026-09-15 (added saved constellations as durable task scope across Galaxy, Library, MCP, and CLI. Earlier kept one ACP conversation across Analysis tabs, including Not held, and added the source-hidden, current-turn Ontology DNA presentation inside that workbench. Earlier chose the architecture comparison ladder by canvas height, seated rule sentences beside their arrows, and added the agent task chooser; on 2026-08-31 documented the six-tab Insights contract and verified the Flow-to-agent handoff; earlier replaced the compatibility brand with the full/compact/micro pixel mascot family and added one verified, finite agent-work motion sequence; earlier added the separate Architecture contract/workbench,
+> Last updated: 2026-09-17 (added Library Rounds: unattended hourly consistency checks and one-turn service passes under a standing scope approved once, with a since-you-left card and a time-axis ledger. Earlier (2026-09-15) added saved constellations as durable task scope across Galaxy, Library, MCP, and CLI. Earlier kept one ACP conversation across Analysis tabs, including Not held, and added the source-hidden, current-turn Ontology DNA presentation inside that workbench. Earlier chose the architecture comparison ladder by canvas height, seated rule sentences beside their arrows, and added the agent task chooser; on 2026-08-31 documented the six-tab Insights contract and verified the Flow-to-agent handoff; earlier replaced the compatibility brand with the full/compact/micro pixel mascot family and added one verified, finite agent-work motion sequence; earlier added the separate Architecture contract/workbench,
 > source-derived conformance, and its MCP/CLI agent handoff; re-verified current routes, installed app commitments,
 > and project meaning receipts — `/ontology` is a compatibility redirect to
 > `/topology?index=expanded`, `/ontology/edit` and
@@ -1189,10 +1189,72 @@ against 1.73 ms approximated at 800; one whole tick is 0.10 / 0.40 / 1.73 ms at 
 800 nodes). Nothing new is installed: Graphology is no longer imported by this widget at
 all.
 
-**Four gestures, and a picture that is still until a hand moves it.** Dragging a mark pins it under the
-pointer while the springs pull its neighbours after it, and releasing hands it a capped
-flick — on a folder where six pages cite the same seven sources no layout can separate
-anything, so *pulling one dot out of the tangle* is the reading operation. The wheel zooms
+**The picture is columns** (2026-09-17). The owner opened the home on his own folder —
+two pages, a few files — and read the live cloud as half-made: dots floating in a black
+field at positions that changed with every visit. `library-flow-layout.ts` replaces the
+force picture at rest with a pure, deterministic layout: files in a column on the left,
+the pages written from them in the middle, the concepts those pages name on the right,
+each column ordered by the barycentre of its neighbours so a page sits level with the
+files it cites, and every edge an S-curve from column to column. The layout is laid in a
+world box seen through the zoom ceiling, so a folder of thirty marks or fewer fits with
+its widest mark at 36px on every window; a longer folder lays out taller than the box and
+the camera fits it, down to an 18px row, past which a column of pages folds into
+sub-columns with room for every name and a band of hundreds of files folds into a grid of
+squares that names a file on hover or once zoomed open. A file's name stands left of its
+square and a page's or concept's right of its disc, where no edge runs. Measured on the
+four fixtures at 1040, 1512 and 1920: every page of a 60-page folder is named at 1512 and
+1920, no name crosses another, and the same folder draws the same picture on every visit.
+The simulation below remains as the engine's position store; its forces are not stepped
+under this layout. Decision: `docs/records/decisions/2026-09-17-library-graph-flow-columns-*.md`.
+
+**Past four hundred marks the picture is a map of islands** (2026-09-18). The owner:
+*"a wiki piles up thousands of files in no time; plan for tens of thousands. Find the
+picture that makes a person go 'wow' and is still calm and good to look at."* Columns name
+everything up to a few hundred marks; past `ISLANDS_MIN_MARKS` (400) no picture can name
+things, and the home shows shape and state instead. The reference is the data map (Nomic
+Atlas's information cartography: points as texture, a few topic labels at rest, detail as
+the camera closes in); Atlas's version uses what the wiki already knows instead of an
+embedding. `library-islands-layout.ts` makes **an island per concept**: the pages that name
+it as small discs at the centre, the files those pages were written from as smaller squares
+packed around them on a sunflower spiral, so an island reads as a body with a shore. Pages
+naming no concept gather on *Unsorted* (or on an island per wiki sub-folder); files no page
+has read gather on *Unread*, which on a half-read folder is the largest island and the truth
+the home should tell. Islands pack largest-first about the centre on a spiral stretched to
+the box's aspect; every island carries its name and count on a ground plate; a stale page is
+an amber dot; no line is drawn at rest, and a pointed-at or held mark still answers with its
+own. The layout is pure and deterministic, like the flow. **A press on an island opens it
+as columns** — its own pages, files and rows, few enough for the flow to name every one —
+with a chip at the picture's top-left back to the islands and Escape as the same way out;
+**zooming the wheel into an island opens it too** once it spans 45% of the view or the camera
+reaches its ceiling (the aim is the island under the pointer at the first wheel step), and
+zooming out of an opened island past 60% of its fit returns the map; **the marks travel**
+between the two pictures over one `--motion-settle` while the rest fade and the camera
+eases, never a cut (sampled: a page 480px in 230 ms on the motion curve); **the islands are
+bodies** (`library-islands-physics.ts`, owner question 2026-09-18 "doesn't it move like a
+force graph?"): a folder's islands start near the middle of the map and are pushed out to
+their places, largest first, in about half a second — the picture assembling rather than
+appearing — and dragging an island carries it while the islands it runs into are shoved
+aside and settle back once it has passed; a map laid again while showing keeps each island
+where it stands. At rest nothing moves, which keeps the 2026-09-08 rule; the physics is a
+spring home, a separation that leaves no two bodies overlapping, and heavy damping at a
+fixed step, deterministic and bounded;
+a dot on the overview takes a press only from an 8px radius, a real target. Inside an
+opened island, and on any folder whose page column folds, **folded pages stand in stacks**:
+each sub-column of pages keeps the files its pages read as a small grid directly to its
+left, rows aligned, so no citation crosses another stack's names. Measured in Chrome:
+3,424 marks in 26 islands at a 2.5 ms frame; 11,240 marks in 42 islands at 4.8 ms, every
+island named — the quiet overview paints in four fills, one per ink. The layout itself
+takes 36 ms at 10,000 files and 107 ms at 30,000 (`library-islands-layout.perf.test.ts`).
+What the measurement had to raise locally is the folder walk's own cap,
+`VAULT_WALK_MAX_ENTRIES` (4,000, mirrored in Rust): past it the walk truncates and says so,
+so a folder of ten thousand files is not yet a folder the Library sees whole. Gates:
+`tests/e2e/library-graph-islands.spec.ts`. Decision:
+`docs/records/decisions/2026-09-18-library-islands-map-*.md`.
+
+**Four gestures, and a picture that is still until a hand moves it.** A drag on a mark
+moves the whole picture, the same pan a drag on the background makes — a mark has a place
+in its column, not a position a hand may improve (under the earlier force picture a drag
+pinned the mark and the springs pulled its neighbours after it). The wheel zooms
 about the pointer between half and four times the fit; dragging empty canvas pans;
 double-click and a `ChromeTile` in the canvas's corner fit the whole picture; a coarse
 pointer gets one-finger drag and pinch. Which gesture a press *is* is decided once, at
@@ -1939,6 +2001,29 @@ RATIO-SYSTEM 1600px container / 960px centered utility column.
 
 ---
 
+### Library — Rounds: the Library keeps itself current while nobody is looking (2026-09-17)
+
+A fifth Library tab, **Rounds**, in the installed app. A round is a rule the Library
+keeps on its own while Ontology Atlas is open on this Mac: what to check, how often,
+and what it may write. Two kinds ship. **Pages still match their sources** hashes every
+cited source on this Mac and runs the page check with no agent turn, hourly, every six
+hours, daily or on weekdays at a time; when a page went stale it either marks the row or
+spends one agent turn redrafting only the stale sources, and the new page waits as a
+draft. **Documents from a service** is one agent turn per pass through one attached
+connector: re-read what the service sent, bring in what is new (capped), and redraft the
+pages that changed. Registration is one sheet whose primary press reads **Allow and
+save** above the exact scope granted, with the daily agent-turn bill in words; during a
+pass the standing scope answers every permission request itself and refuses anything
+outside `sources/` and `wiki/` pages that fit the template, naming the refusal in the
+ledger. The stage opens on **Since you left**: the span the window was away, the pages
+that went stale, the redrafts waiting, the refusals, and the passes that held, each page
+a press into Wiki. Below it the **ledger** draws passes on a time axis, newest first: a
+held pass is one quiet line, a change is a card, and a sleep gap is a hatched band with
+its span, because a missed window runs once when the Mac wakes and never replays. Rounds
+and their ledger live in `.ontology-atlas/` on this Mac and are not shared through Git.
+The web build explains and points at the app. Decision:
+`docs/records/decisions/2026-09-17-library-rounds-standing-scope-*.md`.
+
 ### Library — one home for Sources, Wiki, and Ontology (2026-09-14)
 
 Sources and generated Wiki pages remain separate from canonical ontology Markdown,
@@ -2135,11 +2220,18 @@ Opening a conversation preserves the selected runner across the quick detection 
 
 **What changed on 2026-09-07**: only the tools Atlas confirmed on this machine are listed inline. The rest open in a dialog with a search field and a scrolling list — the same dialog primitives the connector dialog uses, so setting up a coding tool and attaching an MCP server feel like one product. Nothing left the list; a fold of 36 rows had nowhere to put a search.
 
-### `/mcp` — MCP (new 2026-09-05)
+### `/agents?tab=mcp` — MCP (new 2026-09-05; a section of the Agents page since 2026-09-18)
 
 **One sentence on what this screen does**: everything MCP — the folder's own server
 (share this folder with a coding tool) and the external connectors an in-app agent may
-reach — under one address, on two tabs (`?tab=`).
+reach — as the last section of the Agents page, with its own two sections on `?mcp=`.
+The owner folded the two rail destinations into one on 2026-09-17 ("merge these two,
+split them as tabs inside"), then on 2026-09-18 took the header tab strip away too ("this
+way of showing them at the top is very bad… it should be folded in here"): the strip spent
+a 56px chrome band on two words and left the rest empty, and the two were one subject.
+`?tab=mcp` scrolls to the section; `/mcp/` and `/mcp/?tab=connectors` redirect into it with
+every parameter kept, so the installed app's `ontology-atlas://mcp?install=…` deep link
+still opens the connectors dialog. The rail lost its MCP tile; `g c` still lands here.
 
 - **Share this folder** — the three steps that put a ready config in front of each tool,
   the connection status those files add up to, the first-contact proof packet an agent

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Maximize2 } from "lucide-react";
+import { ArrowLeft, Maximize2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import type { VaultDoc } from "@/entities/docs-vault";
@@ -9,7 +9,9 @@ import { EMPTY_LIBRARY_WORK_ACTIVITY, type LibraryWorkActivity } from "@/feature
 import { useRouter } from "@/i18n/navigation";
 import { usePrefersReducedMotion } from "@/shared/lib/use-prefers-reduced-motion";
 import { cn } from "@/shared/lib/cn";
-import { ChromeTile } from "@/shared/ui";
+import { ChromeTile, Surface } from "@/shared/ui";
+import { controlClass } from "@/shared/ui/control-class";
+import { ICON_SIZE } from "@/shared/ui/icon-size";
 
 import {
   buildLibraryGraph,
@@ -25,7 +27,7 @@ import {
   type LibraryGraphCardSide,
 } from "../model/library-graph-card";
 import { LibraryMarkPopover } from "./LibraryMarkPopover";
-import { useLibraryGraphEngine, type LibraryGraphCardBox } from "./use-library-graph-engine";
+import { useLibraryGraphEngine, type LibraryGraphCardBox, type LibraryIslandPick } from "./use-library-graph-engine";
 
 /**
  * **The library's graph — one live canvas of what this folder's write-ups are made of.**
@@ -215,10 +217,67 @@ export function LibraryGraph({
   const router = useRouter();
   const reducedMotion = usePrefersReducedMotion();
 
-  const graph = useMemo(
+  const wholeGraph = useMemo(
     () => buildLibraryGraph({ docs, wikiPages, sources }),
     [docs, sources, wikiPages],
   );
+  /**
+   * **The island a person stepped onto.** On a folder past `ISLANDS_MIN_MARKS` the home is a
+   * map of islands; a press on one narrows the picture to that island's own pages, files
+   * and concept, which is few enough for the flow to name every one — the map's "zoom in
+   * until the streets have names", done as one press and one way back. The narrowed graph
+   * is the whole graph filtered by id, so every fact on it is the folder's own.
+   */
+  const [pickedIsland, setPickedIsland] = useState<LibraryIslandPick | null>(null);
+  /**
+   * **The Unread island does not open.** It is the files no page has read, and files no
+   * page has read have nothing between them: opened as columns it was a bare grid of
+   * fourteen hundred hollow squares (owner, 2026-09-18: "this looks bad when clicked — is
+   * it because they have no relation to each other?" — yes). What a press on it can do is
+   * say so, and point at the two places that act on it: the Sources list, where each of
+   * them is marked not compiled, and the Compile clause above the picture, which starts
+   * on the first. The island stays pressed until the pointer leaves it or Escape.
+   */
+  const [unreadPressed, setUnreadPressed] = useState<LibraryIslandPick | null>(null);
+  const setIsland = useCallback((next: LibraryIslandPick | null) => {
+    if (next && next.kind === "unread") {
+      setUnreadPressed(next);
+      return;
+    }
+    setUnreadPressed(null);
+    setPickedIsland(next);
+  }, []);
+  /** The island under the pointer, for the legend's line: what this island is, in one sentence. */
+  const [hoveredIsland, setHoveredIsland] = useState<LibraryIslandPick | null>(null);
+  const leaveIsland = useCallback(() => setIsland(null), [setIsland]);
+  /** The island the keyboard stands on, on the overview; arrows step, Enter opens. */
+  const [focusedIslandId, setFocusedIslandId] = useState<string | null>(null);
+  // The island is a view of a folder; a folder that no longer holds any of it lets it go.
+  const island = useMemo(() => {
+    if (!pickedIsland) return null;
+    const ids = new Set(wholeGraph.nodes.map((node) => node.id));
+    return pickedIsland.pages.some((id) => ids.has(id)) || pickedIsland.sources.some((id) => ids.has(id)) ? pickedIsland : null;
+  }, [pickedIsland, wholeGraph]);
+  const graph = useMemo(() => {
+    if (!island) return wholeGraph;
+    // The island's own concept is what every page on it names — the bar says so — so its
+    // ring and the dashed line from every page to it would be fifty lines saying one word.
+    const keep = new Set<string>([...island.pages, ...island.sources]);
+    const nodes = wholeGraph.nodes.filter((node) => keep.has(node.id));
+    const edges = wholeGraph.edges.filter((edge) => keep.has(edge.source) && keep.has(edge.target));
+    return {
+      nodes,
+      edges,
+      counts: {
+        sources: nodes.filter((node) => node.kind === "source").length,
+        pages: nodes.filter((node) => node.kind === "page").length,
+        concepts: nodes.filter((node) => node.kind === "concept").length,
+        cites: edges.filter((edge) => edge.relation === "cites").length,
+        mentions: edges.filter((edge) => edge.relation === "mentions").length,
+      },
+    };
+  }, [island, wholeGraph]);
+
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cardRef = useRef<HTMLElement | null>(null);
@@ -322,8 +381,10 @@ export function LibraryGraph({
   // A page always carries its name; what the order changes is which *files* are named, and
   // the camera decides that. See the note above the removed threshold.
   const standingLabels = true;
+  const islandLabels = useMemo(() => ({ unsorted: t("graph.islandUnsorted"), unread: t("graph.islandUnread") }), [t]);
   const engine = useLibraryGraphEngine({
     graph,
+    islandLabels,
     canvasRef,
     reducedMotion,
     selectedId,
@@ -340,6 +401,14 @@ export function LibraryGraph({
     onHover: setHoveredId,
     onPressMark: pressMark,
     onActivate: activate,
+    onPressIsland: setIsland,
+    overview: island === null,
+    onHoverIsland: (next: LibraryIslandPick | null) => {
+      setHoveredIsland(next);
+      if (next === null) setUnreadPressed(null);
+    },
+    onLeaveIsland: leaveIsland,
+    focusedIslandId,
     onDismiss: dismissCard,
   });
 
@@ -365,6 +434,17 @@ export function LibraryGraph({
   );
 
   const ordered = graph.nodes;
+  const focusedIsland = engine.islands.find((candidate) => candidate.id === focusedIslandId) ?? null;
+  const stepIsland = useCallback(
+    (delta: number) => {
+      const list = engine.islands;
+      if (list.length === 0) return;
+      const current = list.findIndex((candidate) => candidate.id === focusedIslandId);
+      const next = current === -1 ? (delta > 0 ? 0 : list.length - 1) : (current + delta + list.length) % list.length;
+      setFocusedIslandId(list[next]?.id ?? null);
+    },
+    [engine.islands, focusedIslandId],
+  );
   const stepFocus = useCallback(
     (delta: number) => {
       if (ordered.length === 0) return;
@@ -380,7 +460,15 @@ export function LibraryGraph({
    * **what Enter will do** — the one thing a bare title cannot say, and the one thing that
    * differs between a dot that selects here and a dot that leaves for the map.
    */
-  const announcement = activeNode
+  const announcement = focusedIsland && engine.picture === "islands"
+    ? t("graph.announceIsland", {
+        name: focusedIsland.label,
+        position: engine.islands.indexOf(focusedIsland) + 1,
+        total: engine.islands.length,
+        pages: focusedIsland.pages.length,
+        sources: focusedIsland.sources.length,
+      })
+    : activeNode
     ? t("graph.announce", {
         kind: t(`graph.kind.${activeNode.kind}`),
         name: activeNode.label,
@@ -473,6 +561,27 @@ export function LibraryGraph({
             real button over the canvas rather than a painted mark, so it is reachable by
             the keyboard and measurable by every touch-target gate in the repository. */}
         <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* The way back off an island, and its name: one chip at the picture's top-left,
+            where a map app puts its own "back to overview". A `Surface`, so it leaves the
+            way every conditional surface in this repository leaves. */}
+        <Surface open={island !== null} className="absolute left-2 top-2 z-10 flex items-center gap-2" data-testid="library-graph-island-bar">
+          {island ? (
+          <>
+            <button
+              type="button"
+              data-testid="library-graph-island-back"
+              className={controlClass({ shape: "chip", tone: "muted" })}
+              onClick={() => setIsland(null)}
+            >
+              <ArrowLeft size={ICON_SIZE.sm} aria-hidden />
+              <span>{t("graph.islandBack")}</span>
+            </button>
+            <span className="text-label text-[color:var(--color-text-secondary)]" data-testid="library-graph-island-name">
+              {t("graph.islandName", { name: island.label, pages: island.pages.length, sources: island.sources.length })}
+            </span>
+          </>
+          ) : null}
+        </Surface>
         <canvas
           ref={canvasRef}
           data-testid="library-graph-canvas"
@@ -523,12 +632,20 @@ export function LibraryGraph({
           onPointerLeave={engine.onPointerLeave}
           onDoubleClick={engine.onDoubleClick}
           onKeyDown={(event) => {
+            // On the overview the keyboard walks the islands, not three thousand dots.
+            const onIslands = engine.picture === "islands";
             if (event.key === "ArrowRight" || event.key === "ArrowDown") {
               event.preventDefault();
-              stepFocus(1);
+              if (onIslands) stepIsland(1);
+              else stepFocus(1);
             } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
               event.preventDefault();
-              stepFocus(-1);
+              if (onIslands) stepIsland(-1);
+              else stepFocus(-1);
+            } else if ((event.key === "Enter" || event.key === " ") && onIslands && focusedIsland) {
+              event.preventDefault();
+              setFocusedIslandId(null);
+              setIsland(focusedIsland);
             } else if (event.key === "Enter" || event.key === " ") {
               const target = activeNode;
               if (!target) return;
@@ -539,6 +656,10 @@ export function LibraryGraph({
             } else if (event.key === "Escape") {
               // With a card open its own capture listener has already answered this press.
               setFocusedId(null);
+              setFocusedIslandId(null);
+              setUnreadPressed(null);
+              // With nothing else open, Escape is the way back off an island.
+              if (cardId === null && island) setIsland(null);
             }
           }}
           /* Only the keyboard's own position leaves with the keyboard. A pointer that
@@ -549,6 +670,7 @@ export function LibraryGraph({
              keyboard back to the top of the walk instead of to the mark it had been on. */
           onBlur={() => {
             if (cardId === null) setFocusedId(null);
+            setFocusedIslandId(null);
           }}
         />
         {cardNode ? (
@@ -620,20 +742,30 @@ export function LibraryGraph({
             owner saw. Both sentences are laid in one grid cell so the taller of them sets
             the height and the visible one never changes it. */}
         <div className={cn("mt-1.5 grid", captionQuiet && "max-lg:mt-0")}>
-          <p
-            aria-hidden
-            className={cn(
-              "invisible col-start-1 row-start-1 text-label leading-body [word-break:keep-all]",
-              captionQuiet && "max-lg:sr-only",
-              // Compact reserves one line, not the legend's four: the short legend and the
-              // describe line are each one sentence, so the row's height never moves.
-              compact && "line-clamp-1",
-            )}
-          >
-            {compact
-              ? t(cardNode ? "graph.legendShortCardOpen" : "graph.legendShort")
-              : t(cardNode ? "graph.legendCardOpen" : "graph.legend")}
-          </p>
+          {/*
+            ⚠️ **Both states' sentences size the row, not the current one.** The sizer used
+            to print the sentence of the state it was in, so the row was the *rest* legend's
+            height until a card opened and the shorter card-open legend took a line away:
+            measured 2026-09-18 at 1512, three lines to two, the canvas above grew 20px, and
+            the flow picture — which lays itself into its box — moved every mark 8–14px on
+            the press. Two invisible sentences in one cell, and the taller sets the height
+            in every state.
+          */}
+          {(compact ? ["graph.legendShort", "graph.legendShortCardOpen"] : ["graph.legend", "graph.legendCardOpen", "graph.legendIslands"]).map((key) => (
+            <p
+              key={key}
+              aria-hidden
+              className={cn(
+                "invisible col-start-1 row-start-1 text-label leading-body [word-break:keep-all]",
+                captionQuiet && "max-lg:sr-only",
+                // Compact reserves one line, not the legend's four: the short legend and the
+                // describe line are each one sentence, so the row's height never moves.
+                compact && "line-clamp-1",
+              )}
+            >
+              {t(key as "graph.legend")}
+            </p>
+          ))}
           <p
             id="library-graph-hint"
             data-testid="library-graph-hint"
@@ -662,7 +794,13 @@ export function LibraryGraph({
               122, S19). The vocabulary is the half a reader still needs and is kept
               verbatim; only the gesture clause is swapped, for the two ways back out.
             */}
-            {activeNode
+            {!activeNode && unreadPressed && engine.picture === "islands"
+              ? t("graph.unreadPressed", { sources: unreadPressed.sources.length })
+              : !activeNode && (hoveredIsland ?? focusedIsland) && engine.picture === "islands"
+              ? (hoveredIsland ?? focusedIsland)!.kind === "unread"
+                ? t("graph.describeUnread", { sources: (hoveredIsland ?? focusedIsland)!.sources.length })
+                : t("graph.describeIsland", { name: (hoveredIsland ?? focusedIsland)!.label, pages: (hoveredIsland ?? focusedIsland)!.pages.length, sources: (hoveredIsland ?? focusedIsland)!.sources.length })
+              : activeNode
               ? /* The mark whose card is open is described by how to leave it, not by how
                    to open it; pointing at some *other* mark while a card stands open still
                    answers with what pressing that one would do, because it would. */
@@ -681,7 +819,9 @@ export function LibraryGraph({
                      from assistive technology at the same moment (design-infoviz,
                      2026-09-08). Compact states it in one line instead of four. */
                   t(cardNode ? "graph.legendShortCardOpen" : "graph.legendShort")
-                : t(cardNode ? "graph.legendCardOpen" : "graph.legend")}
+                : engine.picture === "islands" && !cardNode
+                  ? t("graph.legendIslands")
+                  : t(cardNode ? "graph.legendCardOpen" : "graph.legend")}
           </p>
         </div>
         {/* The keyboard path is said to the people who need it and not to the ones

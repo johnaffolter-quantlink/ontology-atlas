@@ -309,6 +309,16 @@ const DEGRADED_SURFACES: readonly DegradedSurface[] = [
     destination: "atlas-git-web-get-app",
   },
   {
+    // Rounds (2026-09-17) keep a clock and open a headless agent session while the
+    // person is away; a browser tab can do neither, so the tab explains and points at
+    // the app. Registering a round on the web would be a promise nothing could keep.
+    name: "순회 — 브라우저는 자리를 비운 동안 시계를 지키거나 에이전트를 열 수 없다",
+    url: "/ko/library/?tab=rounds",
+    card: "library-rounds-app-required",
+    reason: /설치한 앱만 할 수 있습니다/,
+    destination: "library-rounds-get-app",
+  },
+  {
     // ⚠️ **This row claims "cannot save automatically", not "cannot connect"**
     // (2026-08-01). The previous wording was "You cannot connect on this screen" and it was false — MCP attaches to the folder,
     // not to Atlas, and the agent starts the server in its own session, so web users
@@ -333,7 +343,9 @@ const DEGRADED_SURFACES: readonly DegradedSurface[] = [
       await page.getByTestId("first-run-starter-open").click();
       await page.getByTestId("vault-guide-pick-existing").click();
       await page.getByTestId("first-run-starter").waitFor({ state: "detached", timeout: 20_000 });
-      await page.getByTestId("app-nav-rail").getByRole("link", { name: "MCP" }).click();
+      await page.getByTestId("app-nav-rail").getByRole("link", { name: "에이전트" }).click();
+      // MCP is the Agents page's last section since 2026-09-18, not a tab: scroll to it.
+      await page.getByTestId("mcp-page").scrollIntoViewIfNeeded();
       await page.getByTestId("agent-setup-section").waitFor({ timeout: 15_000 });
     },
     needsVault: true,
@@ -372,7 +384,7 @@ const DEGRADED_SURFACES: readonly DegradedSurface[] = [
     // screen; MCP became its own destination, so the row now names the place *and*
     // carries a link to it. A name with no way there is the dead pointer this whole
     // registry exists to prevent.
-    alsoHereLink: { testId: "app-settings-runtimes-mcp-link", href: /\/mcp\// },
+    alsoHereLink: { testId: "app-settings-runtimes-mcp-link", href: /\/agents\/\?tab=mcp/ },
   },
   {
     // **"Connectors"** (registered 2026-09-05) — external MCP servers a person lets the
@@ -389,7 +401,9 @@ const DEGRADED_SURFACES: readonly DegradedSurface[] = [
       await page.getByTestId("first-run-starter-open").click();
       await page.getByTestId("vault-guide-pick-existing").click();
       await page.getByTestId("first-run-starter").waitFor({ state: "detached", timeout: 20_000 });
-      await page.getByTestId("app-nav-rail").getByRole("link", { name: "MCP" }).click();
+      await page.getByTestId("app-nav-rail").getByRole("link", { name: "에이전트" }).click();
+      // MCP is the Agents page's last section since 2026-09-18, not a tab: scroll to it.
+      await page.getByTestId("mcp-page").scrollIntoViewIfNeeded();
       /*
        * ⚠️ **Two presses further in since 2026-09-05.** Connectors are the second tab of the MCP
        * destination, and this card moved into the "add a connector" dialog — finding what is
@@ -564,7 +578,9 @@ test.describe("웹 스모크 ③ 정직한 강등", () => {
     await page.getByTestId("first-run-starter-open").click();
     await page.getByTestId("vault-guide-pick-existing").click();
     await page.getByTestId("first-run-starter").waitFor({ state: "detached", timeout: 20_000 });
-    await page.getByTestId("app-nav-rail").getByRole("link", { name: "MCP" }).click();
+    await page.getByTestId("app-nav-rail").getByRole("link", { name: "에이전트" }).click();
+      // MCP is the Agents page's last section since 2026-09-18, not a tab: scroll to it.
+      await page.getByTestId("mcp-page").scrollIntoViewIfNeeded();
     await page.getByTestId("agent-setup-section").waitFor({ timeout: 15_000 });
 
     const panel = page.getByTestId("web-manual-connect");
@@ -615,7 +631,7 @@ test.describe("웹 스모크 ③ 정직한 강등", () => {
      */
     await expect(page.getByTestId("agent-setup-section")).toBeVisible();
     // 2026-09-05: the pane moved to its own destination.
-    expect(new URL(page.url()).pathname).toBe("/ko/mcp/");
+    expect(new URL(page.url()).pathname).toBe("/ko/agents/");
   });
 
   /**

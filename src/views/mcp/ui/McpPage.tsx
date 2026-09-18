@@ -13,7 +13,7 @@ import { TabBar } from '@/shared/ui';
 import { useSwapHeight } from '@/shared/lib/use-presence';
 import { PAGE_FRAME_FORM, PAGE_HEADER_ROW, PAGE_TITLE_ROW } from '@/shared/ui/page-frame';
 
-import { buildMcpTabHref, parseMcpTab, type McpTab } from '../lib/mcp-tab-state';
+import { MCP_SECTION_PARAM, buildMcpTabHref, parseMcpTab, type McpTab } from '../lib/mcp-tab-state';
 
 /**
  * The **MCP** destination — the folder's own MCP connection, and the external connectors an
@@ -46,7 +46,15 @@ import { buildMcpTabHref, parseMcpTab, type McpTab } from '../lib/mcp-tab-state'
  * token in a keychain. Each of those is stated where it is missing rather than hidden, and
  * everything else here works.
  */
-export function McpPage() {
+/**
+ * `embedded`: rendered as a section of the Agents page rather than a page of its own —
+ * `<section>` with an `h2` instead of `<main>` with an `h1`, the same body below it. The
+ * owner, 2026-09-18, on the header-tab strip that had held Agents and MCP side by side:
+ * *"this way of showing them at the top is very bad… it should be folded in here"*, pointing
+ * at the Agents page body. One subject, one page: the tools on this computer, and below
+ * them the wire they use.
+ */
+export function McpPage({ embedded = false }: { embedded?: boolean } = {}) {
   const t = useTranslations('mcp');
   const localVault = useLocalVault();
   // Kept across a rescan: a null handle here re-read the connectors from nothing each time.
@@ -63,7 +71,7 @@ export function McpPage() {
   const enabledCount = connectors.connectors.filter((connector) => connector.enabled).length;
 
   const searchParams = useSearchParams();
-  const [tab, setTabState] = useState<McpTab>(() => parseMcpTab(searchParams.get('tab')));
+  const [tab, setTabState] = useState<McpTab>(() => parseMcpTab(searchParams.get(MCP_SECTION_PARAM)));
   /*
    * The two panels are very different heights, and swapping them in one frame drops the page's
    * scroll position somewhere unrelated. `useSwapHeight` is this repository's grammar for exactly
@@ -80,7 +88,7 @@ export function McpPage() {
   useEffect(() => {
     const syncFromHistory = () => {
       capturePanelHeight();
-      setTabState(parseMcpTab(new URL(window.location.href).searchParams.get('tab')));
+      setTabState(parseMcpTab(new URL(window.location.href).searchParams.get(MCP_SECTION_PARAM)));
     };
     window.addEventListener('popstate', syncFromHistory);
     return () => window.removeEventListener('popstate', syncFromHistory);
@@ -103,31 +111,8 @@ export function McpPage() {
     );
   };
 
-  return (
-    /*
-     * ⚠️ **`<main>`, not `<div>`** — in this repository the shell does not own `<main>`; each
-     * destination view owns its own, or the accessibility ratchet measures zero elements inside it
-     * and "skip to content" has nowhere to go.
-     */
-    <main
-      id="main"
-      tabIndex={-1}
-      data-testid="mcp-page"
-      data-mcp-tab={tab}
-      className={`${PAGE_FRAME_FORM} max-lg:pb-[calc(var(--topology-mobile-bottom-tab-reserve)+24px)]`}
-    >
-      {/* The description sits outside the header: `PAGE_HEADER_ROW` is one `justify-between`
-          row, so a paragraph placed inside it is pushed to the opposite end from the title. */}
-      <header className={PAGE_HEADER_ROW}>
-        <div className={PAGE_TITLE_ROW}>
-          <h1 className="text-display font-[var(--font-weight-signature)] tracking-[var(--tracking-card)] text-[color:var(--color-text-primary)]">
-            {t('title')}
-          </h1>
-        </div>
-      </header>
-      <p className="mt-2 max-w-2xl break-keep text-body-lg leading-title text-[color:var(--color-text-tertiary)]">
-        {t('lede')}
-      </p>
+  const body = (
+    <>
 
       <div className="mt-5" data-testid="mcp-tabs">
         <TabBar
@@ -190,6 +175,58 @@ export function McpPage() {
           />
         )}
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section
+        id="agents-mcp"
+        data-testid="mcp-page"
+        data-mcp-tab={tab}
+        aria-labelledby="agents-mcp-heading"
+        className="mt-10 min-w-0 border-t border-[color:var(--color-divider)] pt-8"
+      >
+        <h2
+          id="agents-mcp-heading"
+          className="text-title leading-title font-[var(--font-weight-signature)] tracking-[var(--tracking-card)] text-[color:var(--color-text-primary)]"
+        >
+          {t('title')}
+        </h2>
+        <p className="mt-2 max-w-2xl break-keep text-body-lg leading-title text-[color:var(--color-text-tertiary)]">
+          {t('lede')}
+        </p>
+        {body}
+      </section>
+    );
+  }
+
+  return (
+    /*
+     * ⚠️ **`<main>`, not `<div>`** — in this repository the shell does not own `<main>`; each
+     * destination view owns its own, or the accessibility ratchet measures zero elements inside it
+     * and "skip to content" has nowhere to go.
+     */
+    <main
+      id="main"
+      tabIndex={-1}
+      data-testid="mcp-page"
+      data-mcp-tab={tab}
+      className={`${PAGE_FRAME_FORM} max-lg:pb-[calc(var(--topology-mobile-bottom-tab-reserve)+24px)]`}
+    >
+      {/* The description sits outside the header: `PAGE_HEADER_ROW` is one `justify-between`
+          row, so a paragraph placed inside it is pushed to the opposite end from the title. */}
+      <header className={PAGE_HEADER_ROW}>
+        <div className={PAGE_TITLE_ROW}>
+          <h1 className="text-display font-[var(--font-weight-signature)] tracking-[var(--tracking-card)] text-[color:var(--color-text-primary)]">
+            {t('title')}
+          </h1>
+        </div>
+      </header>
+      <p className="mt-2 max-w-2xl break-keep text-body-lg leading-title text-[color:var(--color-text-tertiary)]">
+        {t('lede')}
+      </p>
+      {body}
     </main>
   );
 }

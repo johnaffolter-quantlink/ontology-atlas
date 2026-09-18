@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { createPortal } from "react-dom";
 import { Info, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { useLocalVault, useVaultIdentityScope, useVaultSessionIdentityScope } from "@/entities/vault-session";
@@ -230,9 +231,16 @@ export function restoreFiledAnswer(current: RetainedLibraryAnswer | null, filed:
   return generation === filed.generation && current === null ? filed : current;
 }
 
-export function LibraryPage({ segment, onSegmentChange }: {
+export function LibraryPage({ segment, onSegmentChange, toolsHost = null }: {
   segment?: LibraryIndexSegment;
   onSegmentChange?: (segment: LibraryIndexSegment) => void;
+  /**
+   * A seat in the workspace strip for the info glyph and the fold (2026-09-17). Measured
+   * by the design pass: with both in the column's head, that head was 105px for a 28px
+   * field. The strip's right end past its last tab was empty; the two stand there now,
+   * portalled so their state stays in this view.
+   */
+  toolsHost?: HTMLElement | null;
 } = {}) {
   const reducedMotion = usePrefersReducedMotion();
   const t = useTranslations("library");
@@ -281,6 +289,8 @@ export function LibraryPage({ segment, onSegmentChange }: {
    * one control per setting per screen (guardian, council 2026-09-11).
    */
   const [homeSurface, setHomeSurface] = useState<"guide" | "questions" | "compile" | "overflow" | null>(null);
+  /** The head row's seat for the search field while the list switch lives in the header tabs. */
+  const [searchHost, setSearchHost] = useState<HTMLDivElement | null>(null);
   /**
    * The marks the stale clause is about, while it is pressed. Null is the resting state.
    *
@@ -2499,10 +2509,24 @@ export function LibraryPage({ segment, onSegmentChange }: {
           tooltip: measured at 280px it was three lines of a sentence read once, and it was
           the ~60px this switch now stands in.
         */}
-        <div className="flex-none border-b border-[color:var(--color-overlay-2)] px-3 pb-2.5 pt-4">
+        <div className={segment && toolsHost ? "flex-none px-3 pb-2 pt-3" : "flex-none border-b border-[color:var(--color-overlay-2)] px-3 pb-2.5 pt-4"}>
+          {segment && toolsHost ? (
+            createPortal(
+              <LibraryHeader
+                t={t}
+                title={indexTitle}
+                titleHidden
+                disclosure={libraryProviderDisclosure({ route: agent.route }, t)}
+                onCollapse={() => setIndexCollapsed(true)}
+                collapseRef={indexCollapseRef}
+              />,
+              toolsHost,
+            )
+          ) : (
           <LibraryHeader
             t={t}
             title={indexTitle}
+            titleHidden={Boolean(segment)}
             /*
              * The provider disclosure's one home. It is a fact about this place rather
              * than about a press, so it rides with the place's description instead of
@@ -2512,6 +2536,9 @@ export function LibraryPage({ segment, onSegmentChange }: {
             onCollapse={() => setIndexCollapsed(true)}
             collapseRef={indexCollapseRef}
           />
+          )}
+          {/* The field's seat: full width, so it starts and ends where the doors below do. */}
+          {segment ? <div ref={setSearchHost} data-testid="library-search-host" className="mt-2 min-w-0" /> : null}
           {!segment ? <SegmentedControl
             ariaLabel={t("index.aria")}
             value={indexSegment}
@@ -2560,6 +2587,7 @@ export function LibraryPage({ segment, onSegmentChange }: {
         >
           <LibrarySection
             model={model}
+            searchHost={segment ? searchHost : null}
             segment={indexSegment}
             selectedSlug={opened?.kind === "wiki" ? opened.slug : null}
             selectedSourcePath={opened?.kind === "source" ? opened.path : null}
@@ -3386,12 +3414,20 @@ export function LibraryPage({ segment, onSegmentChange }: {
 function LibraryHeader({
   t,
   title,
+  titleHidden = false,
   disclosure = null,
   onCollapse,
   collapseRef,
 }: {
   t: ReturnType<typeof useTranslations<"library">>;
   title?: string;
+  /**
+   * The title serves assistive technology only. With the list switch in the Library
+   * header (2026-09-14) the column's own title repeated the active tab word for word one
+   * row below it; the row keeps the glyph and the fold, and the search field takes the
+   * seat under them (owner, 2026-09-17).
+   */
+  titleHidden?: boolean;
   /**
    * **The one sentence about provider-owned traffic, when it is true** — the second
    * paragraph of the glyph's own panel, and the only place this screen prints it
@@ -3406,7 +3442,7 @@ function LibraryHeader({
 }) {
   return (
     <div data-testid="library-header" className="flex min-w-0 items-center gap-1.5">
-      <p className="min-w-0 truncate text-body-lg font-[var(--font-weight-signature)] leading-title text-[color:var(--color-text-primary)]">
+      <p className={titleHidden ? "sr-only" : "min-w-0 truncate text-body-lg font-[var(--font-weight-signature)] leading-title text-[color:var(--color-text-primary)]"}>
         {title ?? t("title")}
       </p>
       {/*

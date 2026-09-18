@@ -3,9 +3,9 @@
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-import { LibraryConstellations, LibraryPage } from '@/views/library';
+import { LibraryConstellations, LibraryPage, LibraryRounds, useLibraryRounds } from '@/views/library';
 import { useLocalVault } from '@/entities/vault-session';
 import { selectWikiPages } from '@/entities/docs-vault';
 import { useRouter } from '@/i18n/navigation';
@@ -20,7 +20,7 @@ const OntologyPage = dynamic(
   { loading: () => <RouteLoadingFallback /> },
 );
 
-type LibraryTab = 'sources' | 'wiki' | 'ontology' | 'collections';
+type LibraryTab = 'sources' | 'wiki' | 'ontology' | 'collections' | 'rounds';
 
 export function LibraryWorkspace() {
   const t = useTranslations('library');
@@ -30,10 +30,19 @@ export function LibraryWorkspace() {
   const wikiCount = useMemo(() => selectWikiPages(vault.manifest?.docs ?? []).length, [vault.manifest?.docs]);
   const preferredSegment = useLibraryIndexSegment();
   const requested = params.get('tab');
-  const tab: LibraryTab = requested === 'ontology' || requested === 'collections'
+  const rounds = useLibraryRounds();
+  const roundsOn = rounds ? rounds.rounds.filter((round) => round.enabled).length : 0;
+  const tab: LibraryTab = requested === 'ontology' || requested === 'collections' || requested === 'rounds'
     ? requested
     : requested === 'sources' || requested === 'wiki' ? requested : preferredSegment;
   const handle = selectOpenVaultHandle(vault.status, vault.handle);
+  /**
+   * The strip's right end is empty past its last tab; the Library's info glyph and the
+   * column fold stand there, portalled by `LibraryPage` so their state stays where it is.
+   * Measured 2026-09-17 (design pass): with them in the column's head, that head was 105px
+   * for a 28px field.
+   */
+  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
 
   const selectTab = useCallback((next: LibraryTab) => {
     if (next === tab) return;
@@ -47,9 +56,14 @@ export function LibraryWorkspace() {
 
   return (
     <div data-testid="library-workspace" className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <header className="topology-ui-scale flex h-14 shrink-0 items-stretch gap-5 border-b border-[color:var(--color-divider)] bg-[color:var(--color-panel)] px-3 md:px-4">
-        <p className="hidden shrink-0 items-end pb-2 text-body leading-label font-[var(--font-weight-strong)] text-[color:var(--color-text-primary)] sm:inline-flex">{t('title')}</p>
-        <span aria-hidden className="mb-2.5 hidden h-4 self-end border-l border-[color:var(--color-border-soft)] sm:block" />
+      <header className="topology-ui-scale flex h-14 shrink-0 items-stretch border-b border-[color:var(--color-divider)] bg-[color:var(--color-panel)] px-0">
+        {/*
+          No name in the strip. Every other tabbed destination carries a display title
+          above its tabs (MCP, Insights); this workbench has none, and a body-size word
+          beside a hairline read as a sixth tab with a different font (owner, 2026-09-17,
+          twice). The rail already names the place. The tabs start on the index column's
+          own text line so the strip and the column share one start.
+        */}
         <TabBar
           ariaLabel={t('workspace.aria')}
           activeKey={tab}
@@ -82,8 +96,22 @@ export function LibraryWorkspace() {
               label: t('workspace.collections'),
               testId: 'library-workspace-collections',
             },
+            {
+              key: 'rounds',
+              label: t('workspace.rounds'),
+              count: rounds && rounds.storeStatus !== 'no-vault' && roundsOn > 0 ? roundsOn : undefined,
+              countTitle: t('workspace.roundsCount'),
+              testId: 'library-workspace-rounds',
+            },
           ]}
         />
+        {/*
+          The column's two controls (the glyph, the fold) sit here, on the tabs' own row:
+          the tabs stand on the strip's bottom edge at `--control-h-lg`, so this box takes
+          the same seat and height rather than the strip's centre — measured 2026-09-18,
+          centring on the strip put the glyphs 8.5px above the tab text.
+        */}
+        <div ref={setToolsHost} data-testid="library-strip-tools" className="ml-auto flex min-h-[var(--control-h-lg)] shrink-0 items-center gap-1 self-end pr-3" />
       </header>
       <div
         id={'library-workspace-tabpanel-' + tab}
@@ -95,8 +123,10 @@ export function LibraryWorkspace() {
           <OntologyPage initialCollection="ontology" documentScope="ontology" />
         ) : tab === 'collections' ? (
           <LibraryConstellations handle={handle} documents={vault.manifest?.docs ?? []} />
+        ) : tab === 'rounds' ? (
+          <LibraryRounds />
         ) : (
-          <LibraryPage segment={tab} onSegmentChange={selectTab} />
+          <LibraryPage segment={tab} onSegmentChange={selectTab} toolsHost={toolsHost} />
         )}
       </div>
     </div>

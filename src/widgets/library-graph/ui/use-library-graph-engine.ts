@@ -14,7 +14,21 @@ import {
   type LibraryGraphCardSide,
 } from "../model/library-graph-card";
 import { easeMotion, type LayoutPoint } from "../model/library-graph-layout";
+import type { FlowLayout, FlowWorld } from "../model/library-flow-layout";
+import { ISLANDS_MIN_MARKS, type IslandsLayout } from "../model/library-islands-layout";
 import {
+  createIslandField,
+  isIslandFieldMoving,
+  islandArrival,
+  pinIsland,
+  releaseIsland,
+  settleIslandField,
+  stepIslandField,
+  type IslandField,
+} from "../model/library-islands-physics";
+import {
+  applyLibraryFlowLayout,
+  applyLibraryIslandsLayout,
   createLibrarySimulation,
   hasPinnedNode,
   isLibrarySimulationRunning,
@@ -36,11 +50,13 @@ import {
   isSameView,
   isWheelZoomIntent,
   LIBRARY_ZOOM_MAX,
+  LIBRARY_ZOOM_MIN,
   libraryZoomMax,
   panView,
   scaleBounds,
   screenToWorld,
   SOURCE_LABEL_MIN_SCALE,
+  WIDEST_MARK_WORLD_RADIUS,
   wheelPixelDelta,
   wheelZoomFactor,
   worldToScreen,
@@ -107,6 +123,96 @@ const DRAG_THRESHOLD_PX = 7;
  * makes one folder one framing.
  */
 const FIT_PADDING = LIBRARY_FIT_PADDING;
+/**
+ * The world the flow layout is laid in: the pixel box seen through the zoom ceiling, less
+ * the fit padding, and a little smaller still so the fit lands **on** the ceiling — which
+ * is what draws a small folder's widest mark at `LIBRARY_MAX_MARK_PX` on every window.
+ */
+function flowWorld(box: { width: number; height: number }, ceiling: number): FlowWorld {
+  const shrink = 0.9;
+  return {
+    width: Math.max(1, ((box.width - FIT_PADDING * 2) / ceiling) * shrink),
+    height: Math.max(1, ((box.height - FIT_PADDING * 2) / ceiling) * shrink),
+    ceiling,
+  };
+}
+/**
+ * The world the islands overview is laid in: the pixel box less the fit padding, and a
+ * little smaller still, so the fit lands at 1:1 and a page dot is drawn at its own size.
+ */
+function islandsWorld(box: { width: number; height: number }): { width: number; height: number } {
+  const shrink = 0.94;
+  return {
+    width: Math.max(1, (box.width - FIT_PADDING * 2) * shrink),
+    height: Math.max(1, (box.height - FIT_PADDING * 2) * shrink),
+  };
+}
+/** The island under a canvas point on the overview; null off every island. */
+function islandAt(
+  islands: IslandsLayout["islands"] | undefined,
+  view: LibraryGraphView,
+  box: { width: number; height: number },
+  point: LayoutPoint,
+): IslandsLayout["islands"][number] | null {
+  if (!islands) return null;
+  const world = screenToWorld(point, view, box);
+  return islands.find((island) => Math.hypot(world.x - island.x, world.y - island.y) <= island.r) ?? null;
+}
+/**
+ * Writes the bodies' places back onto the picture: each island's centre, and every dot
+ * at its offset from that centre, so the simulation's nodes (the position store every
+ * frame reads) follow the islands wherever the physics or a hand has put them.
+ */
+function placeIslandBodies(
+  sim: LibrarySimulation,
+  field: IslandField,
+  layout: IslandsLayout | null = null,
+  offsets: ReadonlyMap<string, { island: string; dx: number; dy: number }> | null = null,
+): void {
+  const byId = new Map(field.bodies.map((body) => [body.id, body]));
+  if (layout) {
+    for (const island of layout.islands) {
+      const body = byId.get(island.id);
+      if (!body) continue;
+      island.x = body.x;
+      island.y = body.y;
+    }
+  }
+  if (!offsets) return;
+  for (const node of sim.nodes) {
+    const offset = offsets.get(node.id);
+    if (!offset) continue;
+    const body = byId.get(offset.island);
+    if (!body) continue;
+    node.x = body.x + offset.dx;
+    node.y = body.y + offset.dy;
+  }
+}
+/** On the overview a page's name stands once its dot is this wide on screen. */
+const ISLAND_PAGE_LABEL_MIN_PX = 10;
+/** On the overview a file's name waits for a real zoom: a page dot this wide, not merely named. */
+const ISLAND_SOURCE_LABEL_MIN_PX = 36;
+/**
+ * An island whose disc spans this share of the view's shorter side has been zoomed into,
+ * and opens; so does any island aimed at once the camera is at its ceiling, which a small
+ * island reaches first — measured 2026-09-18: at the 3.6× ceiling the largest topic of a
+ * 3,424-mark folder spans 360px of a 648px view and a ten-page island 180px.
+ */
+const ISLAND_OPENS_AT_VIEW_SHARE = 0.45;
+/** An opened island zoomed out to this share of its fit scale gives way to the map. */
+const ISLAND_LEAVES_BELOW_FIT = 0.6;
+/**
+ * On the overview a dot takes a press only once its radius is this, on screen: a 16px
+ * mark is a target, a 4px one is texture and the island under it is what the press means.
+ */
+const ISLAND_DOT_PRESS_MIN_PX = 8;
+
+/**
+ * A folded file band (`FlowColumn.grid` above one) names its files only this far past the
+ * source threshold: its squares stand 24px apart at the ceiling, which is no room for a
+ * name, so the names arrive once the person has zoomed the band to about 60px a row.
+ */
+const FOLDED_LABEL_MIN_SCALE = SOURCE_LABEL_MIN_SCALE * 3.5;
 
 /** How fast an auto-fitting view catches up with the settling picture, per frame. */
 const AUTO_FIT_FOLLOW = 0.16;
@@ -131,6 +237,8 @@ interface PointerState {
   pressedNodeId: string | null;
   /** Non-null while a mark is being carried; the offset keeps the grab point under the hand. */
   drag: { nodeId: string; offset: LayoutPoint } | null;
+  /** Non-null while an island of the overview is being carried, with its own grab offset. */
+  islandDrag: { id: string; offset: LayoutPoint } | null;
   history: Array<{ x: number; y: number; t: number }>;
 }
 
@@ -235,6 +343,16 @@ export interface LibraryGraphCardBox {
   mark: { x: number; y: number; radius: number };
 }
 
+/** An island a press picked: what it stands for and who is on it. */
+export interface LibraryIslandPick {
+  id: string;
+  kind: "concept" | "folder" | "unsorted" | "unread";
+  label: string;
+  conceptId: string | null;
+  pages: readonly string[];
+  sources: readonly string[];
+}
+
 export interface LibraryGraphEngine {
   onPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
@@ -253,6 +371,10 @@ export interface LibraryGraphEngine {
   framed: boolean;
   /** The settled picture's width over its height, for `data-picture-aspect`. */
   pictureAspect: number | null;
+  /** The picture the folder got: `flow` names everything, `islands` is the overview past `ISLANDS_MIN_MARKS`. */
+  picture: "flow" | "force" | "islands";
+  /** The islands of the overview, largest first, for the keyboard to step over; empty on any other picture. */
+  islands: readonly LibraryIslandPick[];
   /**
    * Places the open card now, synchronously — what a layout effect calls on open, passing
    * the card's own id because this hook's own state ref is not filled until after it.
@@ -277,11 +399,33 @@ export function useLibraryGraphEngine({
   onCardPlaced,
   onHover,
   onPressMark,
+  onPressIsland,
+  onHoverIsland,
+  onLeaveIsland,
   onActivate,
   onDismiss,
+  layout = "flow",
+  islandLabels = { unsorted: "Unsorted", unread: "Unread" },
+  overview = true,
+  focusedIslandId = null,
 }: {
   graph: LibraryGraph;
   canvasRef: RefObject<HTMLCanvasElement | null>;
+  /**
+   * `flow` (default since 2026-09-17): sources → pages → concepts in columns, still, the
+   * same on every visit; a press on a mark opens its card, a drag pans. `force`: the live
+   * simulation with draggable marks, kept for the map's reasons and for comparison.
+   */
+  layout?: "flow" | "force";
+  /** The names of the two islands that are not a concept. */
+  islandLabels?: { unsorted: string; unread: string };
+  /**
+   * Whether the graph is the whole folder. An opened island is not: it is drawn as columns
+   * however many marks it holds, because the person asked for that island by name.
+   */
+  overview?: boolean;
+  /** The island the keyboard stands on; its rim wears the focus ring. */
+  focusedIslandId?: string | null;
   reducedMotion: boolean;
   selectedId: string | null;
   hoveredId: string | null;
@@ -319,12 +463,89 @@ export function useLibraryGraphEngine({
   onHover: (id: string | null) => void;
   /** A press, or `Enter`: the mark answers with a card beside it, and stays where it is. */
   onPressMark: (node: LibraryGraphNode) => void;
+  /** A press on an island of the overview, off any dot: the caller opens that island. */
+  onPressIsland?: (island: LibraryIslandPick) => void;
+  /** The island under the pointer changed; null once the pointer is off every island. */
+  onHoverIsland?: (island: LibraryIslandPick | null) => void;
+  /** The person zoomed out of an opened island past its fit: the caller returns to the map. */
+  onLeaveIsland?: () => void;
   /** A double press: the shortcut past the card, straight to the page or the map. */
   onActivate: (node: LibraryGraphNode) => void;
   /** A press that landed on no mark. Whatever stands open is dismissed by it. */
   onDismiss: () => void;
 }): LibraryGraphEngine {
   const simRef = useRef<LibrarySimulation | null>(null);
+  const layoutRef = useRef(layout);
+  /** The columns as last laid, for the label rule (a folded band names no file at rest). */
+  const columnsRef = useRef<FlowLayout | null>(null);
+  /** The islands of the overview as last laid, or null under any other picture. */
+  const islandsRef = useRef<IslandsLayout | null>(null);
+  /** The island under the pointer on the overview, for its rim and the cursor. */
+  const hoveredIslandRef = useRef<string | null>(null);
+  /**
+   * The islands as bodies (`library-islands-physics.ts`): they arrive, they can be carried,
+   * and at rest they are still. Every dot keeps its offset from its island's centre, so a
+   * body moving carries its dots.
+   */
+  const islandFieldRef = useRef<IslandField | null>(null);
+  /** Whether the last picture laid was the whole folder, for telling a return from an opened island apart from a growing folder. */
+  const lastOverviewRef = useRef(true);
+  const islandOffsetsRef = useRef<Map<string, { island: string; dx: number; dy: number }>>(new Map());
+  /**
+   * The island the last wheel zoom-in was aimed at, resolved at wheel time in world
+   * units; null after a zoom-out. Resolved then, not per frame, because the camera's
+   * clamp near the picture's edge slides the view under a fixed screen point, and the
+   * island under the pointer at the end of a zoom is not always the one it began on.
+   */
+  const zoomAimRef = useRef<string | null>(null);
+  const onPressIslandRef = useRef(onPressIsland);
+  const onHoverIslandRef = useRef(onHoverIsland);
+  const onLeaveIslandRef = useRef(onLeaveIsland);
+  useEffect(() => {
+    onPressIslandRef.current = onPressIsland;
+    onHoverIslandRef.current = onHoverIsland;
+    onLeaveIslandRef.current = onLeaveIsland;
+  }, [onHoverIsland, onLeaveIsland, onPressIsland]);
+  /** The scale the fit last asked for; what "zoomed out past the fit" is measured against. */
+  const fitScaleRef = useRef(1);
+  /**
+   * **A picture changing under the same marks travels, it does not cut.** Opening an island
+   * keeps every mark on it and lays it again as columns; closing one lays the map again.
+   * The marks that are on both pictures ease from where they stood to where they stand
+   * now over one `--motion-settle`, while the ones leaving fade as ghosts and the ones
+   * arriving fade in, and the camera eases to the new fit — one input, one event, every
+   * part starting on the same frame. Reduced motion snaps, as the camera does.
+   */
+  const travelRef = useRef<{ from: Map<string, LayoutPoint>; since: number } | null>(null);
+  const pick = (island: IslandsLayout["islands"][number]): LibraryIslandPick => ({
+    id: island.id,
+    kind: island.kind,
+    label: island.label,
+    conceptId: island.conceptId,
+    pages: island.pages,
+    sources: island.sources,
+  });
+
+  /** What the last sync of the graph cost, in ms: layout, simulation and physics together. */
+  const syncCostRef = useRef(0);
+  /** The ids of the islands whose name the last frame placed; armed only under the `e2e` probe. */
+  const islandReportRef = useRef<string[] | null>(null);
+  /** Pages with at least one unverified citation, for the islands' stale counts. */
+  const stalePagesRef = useRef<Set<string>>(new Set());
+  /**
+   * Which picture the folder gets: the flow names everything up to `ISLANDS_MIN_MARKS`
+   * marks; past that the overview is islands. The force picture stays what it was.
+   */
+  const pictureRef = useRef<"flow" | "force" | "islands">(layout);
+  const islandLabelsRef = useRef(islandLabels);
+  const overviewRef = useRef(overview);
+  useEffect(() => {
+    islandLabelsRef.current = islandLabels;
+    overviewRef.current = overview;
+  }, [islandLabels, overview]);
+  useEffect(() => {
+    layoutRef.current = layout;
+  }, [layout]);
   const viewRef = useRef<LibraryGraphView>({ scale: 1, x: 0, y: 0 });
   /**
    * Whether the view is still following the picture, and whether it has caught up.
@@ -381,6 +602,7 @@ export function useLibraryGraphEngine({
     last: null,
     pressedNodeId: null,
     drag: null,
+    islandDrag: null,
     history: [],
   });
   const touchesRef = useRef<Map<number, LayoutPoint>>(new Map());
@@ -441,6 +663,10 @@ export function useLibraryGraphEngine({
   }, [graph]);
 
   const [pictureAspect, setPictureAspect] = useState<number | null>(null);
+  /** Which picture the folder got, for the legend: the flow names things, the islands do not. */
+  const [picture, setPicture] = useState<"flow" | "force" | "islands">(layout);
+  const [islandsList, setIslandsList] = useState<readonly LibraryIslandPick[]>([]);
+  const focusedIslandRef = useRef(focusedIslandId);
 
   /**
    * **Whether the picture is already framed**, published for the fit tile.
@@ -607,6 +833,7 @@ export function useLibraryGraphEngine({
        * nothing. The tile stops offering instead, and this is what it reads.
        */
       const fitTarget = fitView(bounds, box, FIT_PADDING, zoomMaxRef.current);
+      fitScaleRef.current = fitTarget.scale;
       if (autoFitRef.current.on) {
         const target = fitTarget;
         const current = viewRef.current;
@@ -648,6 +875,18 @@ export function useLibraryGraphEngine({
       publishFramed(isSameView(view, fitTarget));
 
       const world = libraryPositions(sim);
+      const travel = travelRef.current;
+      if (travel) {
+        const t = (now - travel.since) / Math.max(1, motionRef.current.settle);
+        if (t >= 1 || stateRef.current.reducedMotion) travelRef.current = null;
+        else {
+          const eased = easeMotion(t);
+          for (const [id, start] of travel.from) {
+            const end = world.get(id);
+            if (end) world.set(id, { x: start.x + (end.x - start.x) * eased, y: start.y + (end.y - start.y) * eased });
+          }
+        }
+      }
       const screen = new Map<string, LayoutPoint>();
       for (const [id, point] of world) screen.set(id, worldToScreen(point, view, box));
       // A mark's drawn size is its world radius through the same camera its position goes
@@ -692,6 +931,20 @@ export function useLibraryGraphEngine({
       // ── Arrivals and departures. ──
       const opacity = new Map<string, number>();
       for (const node of sim.nodes) if (node.entered < 1) opacity.set(node.id, easeMotion(node.entered));
+      // On the overview a dot arrives with its island: it fades in as the island closes in.
+      if (pictureRef.current === "islands" && islandFieldRef.current && isIslandFieldMoving(islandFieldRef.current)) {
+        const arrivalOf = new Map<string, number>();
+        for (const body of islandFieldRef.current.bodies) {
+          const arrival = islandArrival(body);
+          if (arrival < 1) arrivalOf.set(body.id, easeMotion(arrival));
+        }
+        if (arrivalOf.size > 0) {
+          for (const [id, offset] of islandOffsetsRef.current) {
+            const alpha = arrivalOf.get(offset.island);
+            if (alpha !== undefined) opacity.set(id, Math.min(opacity.get(id) ?? 1, alpha));
+          }
+        }
+      }
       const nodes: LibraryGraphNode[] = [...graphRef.current.nodes];
       const ghosts = ghostsRef.current;
       if (ghosts.size > 0) {
@@ -832,6 +1085,47 @@ export function useLibraryGraphEngine({
       // The pass below appends; without this the measurement's array would be every
       // frame's names at once.
       if (labelReportRef.current) labelReportRef.current.length = 0;
+      if (islandReportRef.current) islandReportRef.current.length = 0;
+      // The islands in canvas pixels, and how wide a page dot is on screen right now.
+      const islands =
+        pictureRef.current === "islands" && islandsRef.current
+          ? islandsRef.current.islands.map((island) => {
+              const at = worldToScreen(island, view, { width, height });
+              let stale = 0;
+              for (const id of island.pages) if (stalePagesRef.current.has(id)) stale += 1;
+              const body = islandFieldRef.current?.bodies[islandFieldRef.current.index.get(island.id) ?? -1];
+              return { id: island.id, kind: island.kind, label: island.label, x: at.x, y: at.y, r: island.r * view.scale, pages: island.pages.length, sources: island.sources.length, stale, arrival: body ? islandArrival(body) : 1 };
+            })
+          : undefined;
+      const widestPagePx = pictureRef.current === "islands" ? 2 * view.scale * Math.max(0, ...nodes.filter((node) => node.kind === "page").map((node) => radiiRef.current.get(node.id) ?? 0)) : Infinity;
+      /*
+       * **Zooming into an island opens it.** The map's own rule — zoom in until the streets
+       * have names — cannot be met by the packed island itself: its pages stand a breath
+       * apart so that it reads as a body, and a name needs room the body does not have. So
+       * once a person has zoomed until one island fills the view, that island is what they
+       * want, and it opens as columns the way a press would. The chip and Escape lead back.
+       */
+      const aim = zoomAimRef.current;
+      if (
+        pictureRef.current === "islands" &&
+        islands &&
+        aim &&
+        !(autoFitRef.current.on && !autoFitRef.current.converged) &&
+        pointerRef.current.phase !== "dragging" &&
+        onPressIslandRef.current
+      ) {
+        const atCeiling = view.scale >= zoomMaxRef.current - 1e-6;
+        // The Unread island does not open (it is a pile, not a topic), so a zoom into it
+        // stays a zoom.
+        const filling = islands.find(
+          (island) => island.id === aim && island.kind !== "unread" && (atCeiling || island.r * 2 >= ISLAND_OPENS_AT_VIEW_SHARE * Math.min(width, height)),
+        );
+        const source = filling ? islandsRef.current?.islands.find((island) => island.id === filling.id) : null;
+        if (source) {
+          zoomAimRef.current = null;
+          onPressIslandRef.current(pick(source));
+        }
+      }
       drawLibraryGraph(context, {
         nodes,
         edges: graphRef.current.edges,
@@ -845,13 +1139,33 @@ export function useLibraryGraphEngine({
         activeLabel: stateRef.current.activeLabel,
         standingLabels: stateRef.current.standingLabels,
         radii: screenRadiiRef.current,
-        sourceLabels: view.scale >= SOURCE_LABEL_MIN_SCALE,
+        // A plain source column has a row for every file name; a folded band names files
+        // only zoomed in, as the force picture always did.
+        sourceLabels:
+          pictureRef.current === "flow"
+            ? (columnsRef.current?.columns.find((column) => column.kind === "source")?.grid ?? 1) === 1 || view.scale >= FOLDED_LABEL_MIN_SCALE
+            : pictureRef.current === "islands"
+              ? widestPagePx >= ISLAND_SOURCE_LABEL_MIN_PX
+              : view.scale >= SOURCE_LABEL_MIN_SCALE,
+        conceptLabels:
+          pictureRef.current === "flow"
+            ? (columnsRef.current?.columns.find((column) => column.kind === "concept")?.grid ?? 1) === 1 || view.scale >= FOLDED_LABEL_MIN_SCALE
+            : pictureRef.current === "islands"
+              ? false
+              : view.scale >= SOURCE_LABEL_MIN_SCALE,
         labelReport: labelReportRef.current ?? undefined,
         opacity,
         dim: dimState.value,
         focus,
         activity,
         flow,
+        layout: pictureRef.current,
+        islands,
+        hoveredIslandId: hoveredIslandRef.current,
+        focusedIslandId: focusedIslandRef.current,
+        islandReport: islandReportRef.current ?? undefined,
+        pageLabels: pictureRef.current !== "islands" || widestPagePx >= ISLAND_PAGE_LABEL_MIN_PX,
+        focusEdgesOnly: pictureRef.current === "islands",
       });
 
       placeCard();
@@ -865,7 +1179,7 @@ export function useLibraryGraphEngine({
       const scaleText = view.scale.toFixed(4);
       if (canvas.dataset.viewScale !== scaleText) canvas.dataset.viewScale = scaleText;
       const interaction =
-        pointerRef.current.drag !== null
+        pointerRef.current.drag !== null || pointerRef.current.islandDrag !== null
           ? "node"
           : pointerRef.current.phase === "dragging"
             ? "pan"
@@ -898,9 +1212,10 @@ export function useLibraryGraphEngine({
     const sim = simRef.current;
     const bounds = sim ? librarySimulationBounds(sim) : null;
     if (!bounds) return;
-    const spanX = bounds.maxX - bounds.minX;
-    const spanY = bounds.maxY - bounds.minY;
-    if (!(spanX > 0) || !(spanY > 0)) return;
+    // A one-row flow picture (a page and its one source) has no vertical span of centres;
+    // its height is a mark's, so the witness still reports a shape rather than nothing.
+    const spanX = Math.max(bounds.maxX - bounds.minX, 2 * WIDEST_MARK_WORLD_RADIUS);
+    const spanY = Math.max(bounds.maxY - bounds.minY, 2 * WIDEST_MARK_WORLD_RADIUS);
     setPictureAspect((current) =>
       current !== null && Math.abs(current - spanX / spanY) < 0.005 ? current : spanX / spanY,
     );
@@ -913,6 +1228,11 @@ export function useLibraryGraphEngine({
     lastPaintRef.current = 0;
     frameRef.current = requestAnimationFrame((now) => stepRef.current(now));
   }, []);
+  // The keyboard's island changed: one frame, so its ring moves with it.
+  useEffect(() => {
+    focusedIslandRef.current = focusedIslandId;
+    wake();
+  }, [focusedIslandId, wake]);
 
   const currentActivitySignature = activitySignature(activity);
   useEffect(() => {
@@ -937,8 +1257,24 @@ export function useLibraryGraphEngine({
         return;
       }
       const reduced = stateRef.current.reducedMotion;
-      const busy = isLibrarySimulationRunning(sim) || hasPinnedNode(sim);
-      if (busy) {
+      // The islands' own physics: one fixed step a frame while anything moves, then still.
+      const field = pictureRef.current === "islands" ? islandFieldRef.current : null;
+      if (field && isIslandFieldMoving(field)) {
+        if (reduced && pointerRef.current.islandDrag === null) settleIslandField(field);
+        else stepIslandField(field);
+        placeIslandBodies(sim, field, islandsRef.current, islandOffsetsRef.current);
+      }
+      const busy = isLibrarySimulationRunning(sim) || hasPinnedNode(sim) || (field !== null && isIslandFieldMoving(field));
+      /*
+       * ⚠️ **The forces run only under the force picture.** The flow and the islands are
+       * laid, and their marks stand closer than the simulation's collision reach: stepping
+       * it while the islands arrived let the collision blow three thousand packed dots out
+       * into a cloud over every island, which the physics then dragged back each frame —
+       * the "very cluttered and strange" motion the owner saw on 2026-09-18.
+       */
+      // A laid picture still lets a mark that is fading in arrive, at the simulation's own rate.
+      if (pictureRef.current !== "force") for (const node of sim.nodes) if (node.entered < 1) node.entered = Math.min(1, node.entered + 0.08);
+      if (busy && pictureRef.current === "force") {
         /*
          * ⚠️ **Reduced motion settles here, not only where the simulation is created.**
          * `usePrefersReducedMotion` reports `false` on the first client render by design —
@@ -959,6 +1295,7 @@ export function useLibraryGraphEngine({
       }
       const settling =
         busy ||
+        travelRef.current !== null ||
         dimRef.current.value !== dimRef.current.target ||
         ghostsRef.current.size > 0 ||
         (autoFitRef.current.on && !autoFitRef.current.converged) ||
@@ -1078,6 +1415,7 @@ export function useLibraryGraphEngine({
   const syncSimulation = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const syncStartedAt = typeof performance === "undefined" ? 0 : performance.now();
     const graph = graphRef.current;
     const reducedMotion = stateRef.current.reducedMotion;
     const style = getComputedStyle(canvas);
@@ -1099,6 +1437,99 @@ export function useLibraryGraphEngine({
     radiiRef.current = libraryMarkRadii(graph);
     zoomMaxRef.current =
       radiiRef.current.size === 0 ? LIBRARY_ZOOM_MAX : libraryZoomMax(Math.max(...radiiRef.current.values()));
+    pictureRef.current = layoutRef.current === "flow" && overviewRef.current && graph.nodes.length >= ISLANDS_MIN_MARKS ? "islands" : layoutRef.current;
+    setPicture(pictureRef.current);
+    const layPicture = (sim: LibrarySimulation, travelling: boolean, known: ReadonlySet<string> | null = null) => {
+      /*
+       * Only a mark that was on the previous picture travels. A mark the sync has just
+       * added stands where the simulation seeded it — a spiral across the whole canvas —
+       * and travelling from there sent three thousand dots flying through the map as
+       * their islands arrived (owner, 2026-09-18: "very cluttered and strange while it
+       * moves"). A new mark is placed where it belongs and fades in with its island.
+       */
+      const from = travelling && !reducedMotion ? libraryPositions(sim) : null;
+      if (from && known) for (const id of [...from.keys()]) if (!known.has(id)) from.delete(id);
+      if (pictureRef.current === "islands") {
+        columnsRef.current = null;
+        islandsRef.current = applyLibraryIslandsLayout(sim, graph, islandsWorld(box), islandLabelsRef.current);
+        // The overview's dots are its own size; the ceiling follows them, so zooming in
+        // still ends with a page as wide as a mark on the flow.
+        radiiRef.current = islandsRef.current.radii;
+        zoomMaxRef.current = radiiRef.current.size === 0 ? LIBRARY_ZOOM_MAX : libraryZoomMax(Math.max(...radiiRef.current.values()));
+        setIslandsList(islandsRef.current.islands.map(pick));
+        // Dots belong to their island: each keeps its offset from the island's centre.
+        const offsets = new Map<string, { island: string; dx: number; dy: number }>();
+        for (const island of islandsRef.current.islands) {
+          for (const id of [...island.pages, ...island.sources, ...(island.conceptId ? [island.conceptId] : [])]) {
+            const point = islandsRef.current.positions.get(id);
+            if (point) offsets.set(id, { island: island.id, dx: point.x - island.x, dy: point.y - island.y });
+          }
+        }
+        /*
+         * **A dot that changed island does not fly across the map.** A folder loading in
+         * chunks lays the map again as pages arrive, and sixteen hundred files that were
+         * on the Unread pile now belong to topics: travelling them sent a cloud of dots
+         * through every island (owner, 2026-09-18: "very cluttered and strange while it
+         * moves"). Such a dot leaves a ghost where it was and fades in where it belongs.
+         */
+        const previousOffsets = islandOffsetsRef.current;
+        if (from && previousOffsets.size > 0) {
+          const now = typeof performance === "undefined" ? 0 : performance.now();
+          for (const [id, start] of [...from.entries()]) {
+            const before = previousOffsets.get(id)?.island;
+            const after = offsets.get(id)?.island;
+            if (before === undefined || after === undefined || before === after) continue;
+            from.delete(id);
+            const node = graph.nodes.find((candidate) => candidate.id === id);
+            const live = sim.nodes[sim.index.get(id) ?? -1];
+            if (!node || !live) continue;
+            live.entered = 0;
+            ghostsRef.current.set(`${id}#moved`, { node: { ...node, id: `${id}#moved` }, x: start.x, y: start.y, since: now });
+          }
+        }
+        islandOffsetsRef.current = offsets;
+        /*
+         * The islands arrive on a folder's first map. A map laid again while it is showing
+         * — a folder loading in chunks, a file added — keeps each island where it stands and
+         * lets the spring carry it to its new home, so a growing folder flows rather than
+         * re-assembling; a return from an opened island travels instead (its marks were on
+         * the columns); reduced motion settles in place.
+         */
+        const world = islandsWorld(box);
+        const previous = islandFieldRef.current;
+        // A folder loading in chunks lays its map on the sync path too; that is still the
+        // first map, and it arrives. Only a return from an opened island does not.
+        const returning = travelling && !lastOverviewRef.current;
+        const arriving = !reducedMotion && !returning && previous === null;
+        const field = createIslandField(islandsRef.current.islands, { x: world.width / 2, y: world.height / 2 }, { arriving });
+        if (previous && !returning) {
+          for (const body of field.bodies) {
+            const was = previous.bodies[previous.index.get(body.id) ?? -1];
+            if (!was) continue;
+            body.x = was.x;
+            body.y = was.y;
+            if (Math.hypot(body.x - body.home.x, body.y - body.home.y) > 0.05) field.moving = true;
+          }
+        }
+        if (reducedMotion) settleIslandField(field);
+        islandFieldRef.current = field;
+        placeIslandBodies(sim, field, islandsRef.current, offsets);
+      } else {
+        islandsRef.current = null;
+        islandFieldRef.current = null;
+        islandOffsetsRef.current = new Map();
+        setIslandsList([]);
+        columnsRef.current = applyLibraryFlowLayout(sim, graph, flowWorld(box, zoomMaxRef.current));
+      }
+      if (from && from.size > 0) {
+        // Only marks on both pictures travel; the rest are ghosts or arrivals.
+        const ids = new Set(sim.nodes.map((node) => node.id));
+        for (const id of [...from.keys()]) if (!ids.has(id)) from.delete(id);
+        travelRef.current = from.size > 0 ? { from, since: typeof performance === "undefined" ? 0 : performance.now() } : null;
+      }
+      lastOverviewRef.current = overviewRef.current;
+      autoFitRef.current = { on: true, converged: false };
+    };
     const existing = simRef.current;
     if (!existing) {
       if (box.width === 0 || box.height === 0) return;
@@ -1109,10 +1540,14 @@ export function useLibraryGraphEngine({
        * animation slowed down; it is the same picture, arrived at synchronously, which is
        * exactly what the one-shot layout used to give everybody.
        */
-      if (reducedMotion) settleLibrarySimulation(sim);
+      if (pictureRef.current !== "force") layPicture(sim, false);
+      else if (reducedMotion) settleLibrarySimulation(sim);
       autoFitRef.current = { on: true, converged: false };
     } else {
+      const known = new Set(existing.nodes.map((node) => node.id));
       const changed = syncLibrarySimulation(existing, graph);
+      // The columns are recomputed whole: a new page changes every row under it.
+      if (pictureRef.current !== "force") layPicture(existing, true, known);
       const now = typeof performance === "undefined" ? 0 : performance.now();
       for (const gone of changed.removed) {
         const node = ghostsRef.current.get(gone.id)?.node ?? lastKnownRef.current.get(gone.id);
@@ -1120,6 +1555,8 @@ export function useLibraryGraphEngine({
       }
     }
     lastKnownRef.current = new Map(graph.nodes.map((node) => [node.id, node]));
+    syncCostRef.current = (typeof performance === "undefined" ? 0 : performance.now()) - syncStartedAt;
+    stalePagesRef.current = new Set(graph.edges.filter((edge) => edge.certainty === "unverified").map((edge) => edge.source));
 
     // The aspect is not published here: at creation the picture is still the seed spiral.
     // The loop publishes it the moment the simulation comes to rest.
@@ -1153,7 +1590,16 @@ export function useLibraryGraphEngine({
       const sim = simRef.current;
       // A resize records the new box and moves nothing: the mark scale, the collision reach
       // and the composition are all facts about the folder now, never about the window.
-      if (sim) resizeLibrarySimulation(sim, { width: rect.width, height: rect.height });
+      if (sim) {
+        const before = { ...sim.box };
+        resizeLibrarySimulation(sim, { width: rect.width, height: rect.height });
+        // Columns are a fact about the box: a new width moves them, and the view refits.
+        if (pictureRef.current !== "force" && (before.width !== sim.box.width || before.height !== sim.box.height)) {
+          if (pictureRef.current === "islands") islandsRef.current = applyLibraryIslandsLayout(sim, graphRef.current, islandsWorld(sim.box), islandLabelsRef.current);
+          else columnsRef.current = applyLibraryFlowLayout(sim, graphRef.current, flowWorld(sim.box, zoomMaxRef.current));
+          autoFitRef.current = { on: true, converged: false };
+        }
+      }
       // The first measurement is also what makes the simulation possible: it runs in the
       // canvas's own pixels, so before there is a box there is nothing to create.
       else if (rect.width > 0 && rect.height > 0) syncSimulationRef.current();
@@ -1242,6 +1688,8 @@ export function useLibraryGraphEngine({
         { nodes: graphRef.current.nodes, positions: screenRef.current, radii: screenRadiiRef.current },
         point,
         coarsePointer() ? COARSE_HIT_REACH : undefined,
+        // On the overview a dot is pressable only once it is a mark; below that the island is.
+        pictureRef.current === "islands" ? ISLAND_DOT_PRESS_MIN_PX : 0,
       ),
     [],
   );
@@ -1269,6 +1717,7 @@ export function useLibraryGraphEngine({
         releaseLibraryNode(sim, state.drag.nodeId, releaseVelocity(state.history, timeStamp, viewRef.current.scale));
         reheatLibrarySimulation(sim);
       }
+      if (state.islandDrag && islandFieldRef.current) releaseIsland(islandFieldRef.current, state.islandDrag.id);
       const pressed = state.pressedNodeId;
       pointerRef.current = {
         phase: "idle",
@@ -1277,6 +1726,7 @@ export function useLibraryGraphEngine({
         last: null,
         pressedNodeId: null,
         drag: null,
+    islandDrag: null,
         history: [],
       };
       const canvas = canvasRef.current;
@@ -1300,8 +1750,13 @@ export function useLibraryGraphEngine({
           if (coarsePointer()) onHoverRef.current(node.id);
           onPressMark(node);
         } else {
-          /* A press on the empty canvas dismisses what stands open, and pans nothing. */
-          onDismiss();
+          /* A press on an island of the overview opens it; on the empty canvas it dismisses
+             what stands open, and pans nothing. */
+          const island = pictureRef.current === "islands" ? islandAt(islandsRef.current?.islands, viewRef.current, boxRef.current, commit) : null;
+          if (island && onPressIslandRef.current) {
+            onDismiss();
+            onPressIslandRef.current(pick(island));
+          } else onDismiss();
         }
       }
       wake();
@@ -1330,6 +1785,7 @@ export function useLibraryGraphEngine({
             last: null,
             pressedNodeId: null,
             drag: null,
+    islandDrag: null,
             history: [],
           };
           pinchRef.current = {
@@ -1355,6 +1811,7 @@ export function useLibraryGraphEngine({
         last: point,
         pressedNodeId: hit?.id ?? null,
         drag: null,
+    islandDrag: null,
         history: [{ x: point.x, y: point.y, t: event.timeStamp }],
       };
     },
@@ -1399,9 +1856,16 @@ export function useLibraryGraphEngine({
       if (state.phase === "idle") {
         const hit = hitTest(point);
         if (hit?.id !== stateRef.current.hoveredId) onHoverRef.current(hit?.id ?? null);
+        // On the overview an island is the thing under the pointer when no dot is.
+        const island = hit || pictureRef.current !== "islands" ? null : islandAt(islandsRef.current?.islands, viewRef.current, boxRef.current, point);
+        if ((island?.id ?? null) !== hoveredIslandRef.current) {
+          hoveredIslandRef.current = island?.id ?? null;
+          onHoverIslandRef.current?.(island ? pick(island) : null);
+          wake();
+        }
         // Nothing else on this canvas says a dot can be pressed, and no gate can see a
         // cursor over a painted mark (`cursor-affordance.spec.ts` measures DOM elements).
-        event.currentTarget.style.cursor = hit ? "pointer" : "grab";
+        event.currentTarget.style.cursor = hit || island ? "pointer" : "grab";
         return;
       }
 
@@ -1414,7 +1878,19 @@ export function useLibraryGraphEngine({
         // gesture carries, even if the hand has since left the mark.
         const grabbed = state.pressedNodeId;
         state.pressedNodeId = null;
-        if (grabbed && sim && sim.index.has(grabbed)) {
+        // On the overview a hand on an island carries the island; the islands it runs into
+        // are shoved aside by the physics and settle back once it has passed.
+        const heldIsland =
+          !grabbed && pictureRef.current === "islands" && islandFieldRef.current
+            ? islandAt(islandsRef.current?.islands, viewRef.current, boxRef.current, state.down ?? point)
+            : null;
+        if (heldIsland && islandFieldRef.current) {
+          const world = screenToWorld(point, viewRef.current, box);
+          state.islandDrag = { id: heldIsland.id, offset: { x: heldIsland.x - world.x, y: heldIsland.y - world.y } };
+          pinIsland(islandFieldRef.current, heldIsland.id, { x: heldIsland.x, y: heldIsland.y });
+        }
+        // In the flow layout a mark has one place; a hand that moves it pans the picture.
+        if (grabbed && sim && sim.index.has(grabbed) && pictureRef.current === "force") {
           const node = sim.nodes[sim.index.get(grabbed)!]!;
           const world = screenToWorld(point, viewRef.current, box);
           state.drag = { nodeId: grabbed, offset: { x: node.x - world.x, y: node.y - world.y } };
@@ -1425,7 +1901,10 @@ export function useLibraryGraphEngine({
       }
 
       if (state.phase === "dragging") {
-        if (state.drag && sim) {
+        if (state.islandDrag && islandFieldRef.current) {
+          const world = screenToWorld(point, viewRef.current, box);
+          pinIsland(islandFieldRef.current, state.islandDrag.id, { x: world.x + state.islandDrag.offset.x, y: world.y + state.islandDrag.offset.y });
+        } else if (state.drag && sim) {
           const world = screenToWorld(point, viewRef.current, box);
           pinLibraryNode(sim, state.drag.nodeId, {
             x: world.x + state.drag.offset.x,
@@ -1467,8 +1946,14 @@ export function useLibraryGraphEngine({
   );
 
   const onPointerLeave = useCallback(() => {
+    zoomAimRef.current = null;
     if (pointerRef.current.phase === "idle") onHoverRef.current(null);
-  }, []);
+    if (hoveredIslandRef.current !== null) {
+      hoveredIslandRef.current = null;
+      onHoverIslandRef.current?.(null);
+      wake();
+    }
+  }, [wake]);
 
   const onDoubleClick = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -1505,13 +1990,34 @@ export function useLibraryGraphEngine({
       const rect = canvas.getBoundingClientRect();
       rectRef.current = { left: rect.left, top: rect.top };
       takeCamera();
+      const about = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      // Where the person is zooming into: the island under this point is the one that
+      // opens once it fills the view, not whichever island the view's centre happens to be on.
+      // The first island of a zoom-in run is the aim; later wheel steps keep it, because the
+      // camera's clamp near the picture's edge slides the view under the pointer as it zooms.
+      if (pixels >= 0) zoomAimRef.current = null;
+      else if (pictureRef.current === "islands" && zoomAimRef.current === null) {
+        zoomAimRef.current = islandAt(islandsRef.current?.islands, viewRef.current, boxRef.current, about)?.id ?? null;
+      }
       viewRef.current = zoomViewAbout(
         viewRef.current,
         boxRef.current,
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        about,
         wheelZoomFactor(pixels),
         scaleBounds(zoomMaxRef.current),
       );
+      /*
+       * **Zooming out of an opened island returns to the map** — the mirror of zooming in
+       * to open one. Past the fit by a clear margin the person is asking for more than this
+       * island, and the map is what holds more. The margin keeps a pinch that overshoots
+       * the fit from bouncing back out.
+       */
+      // A wide island fits near the camera's floor already; a wheel-out at the floor is the
+      // same ask, so the floor counts as past the margin.
+      const scaleNow = viewRef.current.scale;
+      if (pixels > 0 && !overviewRef.current && (scaleNow <= fitScaleRef.current * ISLAND_LEAVES_BELOW_FIT || scaleNow <= LIBRARY_ZOOM_MIN + 1e-6)) {
+        onLeaveIslandRef.current?.();
+      }
       wake();
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -1563,10 +2069,20 @@ export function useLibraryGraphEngine({
         })),
       /** What the pointer is holding right now: a mark, the background, or nothing. */
       interaction: () => ({
-        kind: pointerRef.current.drag ? ("node" as const) : pointerRef.current.phase === "dragging" ? ("pan" as const) : ("idle" as const),
-        nodeId: pointerRef.current.drag?.nodeId ?? null,
+        kind: pointerRef.current.drag || pointerRef.current.islandDrag ? ("node" as const) : pointerRef.current.phase === "dragging" ? ("pan" as const) : ("idle" as const),
+        nodeId: pointerRef.current.drag?.nodeId ?? pointerRef.current.islandDrag?.id ?? null,
       }),
       view: () => ({ ...viewRef.current, ...boxRef.current }),
+      /** The columns of the flow picture as last laid, or null under the force layout. */
+      layout: () =>
+        columnsRef.current
+          ? { rowGap: columnsRef.current.rowGap, columns: columnsRef.current.columns.map((column) => ({ kind: column.kind, x: column.x, grid: column.grid, count: column.ids.length })) }
+          : null,
+      /** The islands of the overview, in world units, or null under any other picture. */
+      islands: () =>
+        islandsRef.current
+          ? islandsRef.current.islands.map((island) => ({ id: island.id, kind: island.kind, label: island.label, x: island.x, y: island.y, r: island.r, pages: island.pages.length, sources: island.sources.length }))
+          : null,
       /**
        * Every name the last frame actually placed, in canvas CSS pixels.
        *
@@ -1576,8 +2092,22 @@ export function useLibraryGraphEngine({
        * frame has run with the report armed, which the next line does.
        */
       labels: () => labelReportRef.current ?? [],
+      /** The islands whose name the last frame placed; a name that lost a collision is not here. */
+      islandNames: () => islandReportRef.current ?? [],
       /** Where the simulation is: above the floor it is still arranging itself. */
       alpha: () => simRef.current?.alpha ?? 0,
+      /**
+       * Whether the marks are still travelling to where they will stand: the camera easing
+       * to its fit, a mark still entering, a box change not yet applied. Under the flow
+       * layout `alpha()` is 0 from the first frame — the layout is laid, not settled — so a
+       * spec that reads a mark's place to press it waits on this, not on the alpha.
+       */
+      arriving: () =>
+        (autoFitRef.current.on && !autoFitRef.current.converged) ||
+        pendingBoxRef.current !== null ||
+        travelRef.current !== null ||
+        (islandFieldRef.current !== null && pictureRef.current === "islands" && isIslandFieldMoving(islandFieldRef.current)) ||
+        (simRef.current?.nodes.some((node) => node.entered < 1) ?? false),
       /**
        * The open card's placement in canvas CSS pixels, with the mark it hangs from.
        *
@@ -1599,6 +2129,8 @@ export function useLibraryGraphEngine({
        * is the most expensive frame this canvas ever paints and it is not what a card's
        * budget is about.
        */
+      /** What the last sync of the graph cost, in ms — the one-off work when a folder or an island changes. */
+      syncCost: () => syncCostRef.current,
       paint: () => ({
         last: paintCostRef.current.last,
         mean: paintCostRef.current.frames === 0 ? 0 : paintCostRef.current.total / paintCostRef.current.frames,
@@ -1610,9 +2142,11 @@ export function useLibraryGraphEngine({
       }),
     };
     labelReportRef.current = [];
+    islandReportRef.current = [];
     (window as unknown as { __atlasLibraryGraph?: typeof probe }).__atlasLibraryGraph = probe;
     return () => {
       labelReportRef.current = null;
+      islandReportRef.current = null;
       delete (window as unknown as { __atlasLibraryGraph?: typeof probe }).__atlasLibraryGraph;
     };
   }, []);
@@ -1627,6 +2161,8 @@ export function useLibraryGraphEngine({
     fitToView,
     framed,
     pictureAspect,
+    picture,
+    islands: islandsList,
     placeCard,
   };
 }

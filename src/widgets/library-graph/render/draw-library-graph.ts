@@ -1,5 +1,5 @@
 import type { LibraryGraphEdge, LibraryGraphNode, LibraryGraphNodeKind } from "../model/build-library-graph";
-import type { LayoutPoint } from "../model/library-graph-layout";
+import { easeMotion, type LayoutPoint } from "../model/library-graph-layout";
 import type { LibraryGraphInk } from "./library-graph-ink";
 
 /**
@@ -61,6 +61,20 @@ import type { LibraryGraphInk } from "./library-graph-ink";
  * ring and different by its ink, which are both measurable; a bloom is neither.
  */
 
+interface LibraryGraphIsland {
+  id: string;
+  kind: "concept" | "folder" | "unsorted" | "unread";
+  label: string;
+  x: number;
+  y: number;
+  r: number;
+  pages: number;
+  sources: number;
+  stale: number;
+  /** How far along its arrival the island is, 0–1; its body, shore and name fade in with it. */
+  arrival?: number;
+}
+
 export interface LibraryGraphFrame {
   nodes: readonly LibraryGraphNode[];
   edges: readonly LibraryGraphEdge[];
@@ -87,6 +101,23 @@ export interface LibraryGraphFrame {
    * one number in one place and the renderer stays a pure function of its frame.
    */
   standingLabels: boolean;
+  /** `flow`: columns, edges drawn as horizontal S-curves; `force`: the bowed quadratic; `islands`: the overview. */
+  layout?: "flow" | "force" | "islands";
+  /**
+   * The islands of the overview, in canvas pixels: drawn under the marks as a body with a
+   * name, and the one thing a person can read at rest on a folder of thousands.
+   */
+  islands?: readonly LibraryGraphIsland[];
+  /** The island under the pointer: its rim lights, the way a mark's hover ring does. */
+  hoveredIslandId?: string | null;
+  /** The island the keyboard stands on: a focus ring outside its rim, as a mark gets one. */
+  focusedIslandId?: string | null;
+  /** Filled by the name pass with the ids of the islands whose name was placed, for the probe. */
+  islandReport?: string[];
+  /** Whether a page's name stands at rest; the overview names islands, not pages, until zoomed in. */
+  pageLabels?: boolean;
+  /** Draw only the edges of the mark being pointed at or held; the overview draws no line at rest. */
+  focusEdgesOnly?: boolean;
   /**
    * Whether a file's and a concept's name exist on this frame at all.
    *
@@ -96,6 +127,11 @@ export interface LibraryGraphFrame {
    * named whatever this says.
    */
   sourceLabels: boolean;
+  /**
+   * Whether a concept's name stands at rest. The force picture ties it to the source
+   * threshold; in the flow picture an unfolded concept column has a row for every name.
+   */
+  conceptLabels?: boolean;
   /**
    * The drawn half-extent of each mark, graded by degree
    * (`libraryMarkRadii`). Absent falls back to the flat {@link NODE_RADIUS} band, which is
@@ -477,21 +513,123 @@ function radiusOf(frame: Pick<LibraryGraphFrame, "radii">, node: LibraryGraphNod
  * one node and select another. Generous by 4px: a 5px square is smaller than the
  * pointing device of anybody's hand.
  */
+/** The least an island must be across, on screen, to carry its name inside it. */
+const ISLAND_LABEL_INSIDE_MIN_PX = 64;
+/** How far an island's shore reaches past its rim, in canvas px. */
+const ISLAND_SHORE_PX = 5;
+
+/**
+ * Each island: a disc a shade above the ground, a hairline rim, and its name with its
+ * page count — inside the disc when it is wide enough, under it otherwise, and skipped
+ * when it would cross a name already placed. An *Unread* island is drawn with a dashed
+ * rim: it is the part of the folder nobody has read, not a topic.
+ */
+function drawIslands(ctx: CanvasRenderingContext2D, frame: LibraryGraphFrame, ink: LibraryGraphInk): void {
+  const dim = frame.dim ?? 0;
+  for (const island of frame.islands ?? []) {
+    const presence = (1 - dim * 0.5) * easeMotion(island.arrival ?? 1);
+    ctx.globalAlpha = presence;
+    /*
+     * **A shore.** One wider disc under the island at half the halo's strength, so the
+     * island stands on shallows rather than being cut out of the dark: the same flat
+     * fill the mark halo is (`MARK_HALO_RATIO`), one step out, never a glow. The Unread
+     * island has no shore and its body is the ground — it is the part of the folder that
+     * is not land yet, and its dashed rim says the same.
+     */
+    if (island.kind !== "unread") {
+      ctx.beginPath();
+      ctx.arc(island.x, island.y, island.r + ISLAND_SHORE_PX, 0, Math.PI * 2);
+      ctx.fillStyle = ink.pageHalo;
+      ctx.globalAlpha = presence * 0.5;
+      ctx.fill();
+      ctx.globalAlpha = presence;
+    }
+    ctx.beginPath();
+    ctx.arc(island.x, island.y, island.r, 0, Math.PI * 2);
+    ctx.fillStyle = island.kind === "unread" ? ink.ground : ink.pageHalo;
+    ctx.fill();
+    const hovered = island.id === frame.hoveredIslandId;
+    ctx.lineWidth = hovered ? 1.5 : 1;
+    ctx.strokeStyle = hovered ? ink.selectedRing : ink.labelBorder;
+    ctx.setLineDash(island.kind === "unread" ? [3, 3] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (island.id === frame.focusedIslandId) {
+      ctx.beginPath();
+      ctx.strokeStyle = ink.selectedRing;
+      ctx.lineWidth = 2;
+      ctx.arc(island.x, island.y, island.r + FOCUS_RING_GAP, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * The islands' names, painted after the marks so a name inside an island stands on its
+ * dots rather than under them. Largest first, so the biggest topics keep their names when
+ * two would cross.
+ */
+function drawIslandNames(ctx: CanvasRenderingContext2D, frame: LibraryGraphFrame, ink: LibraryGraphInk): void {
+  const placed: Array<{ x: number; y: number; width: number; height: number }> = [];
+  const dim = frame.dim ?? 0;
+  ctx.font = `${ink.labelPx}px ${ink.fontFamily}`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  const lineHeight = Math.round(ink.labelPx * 1.35);
+  const named = [...(frame.islands ?? [])].sort((a, b) => b.r - a.r);
+  for (const island of named) {
+    // A topic counts its pages; the Unread island has none, so it counts its files.
+    const text = `${island.label} · ${island.kind === "unread" ? island.sources : island.pages}`;
+    const width = ctx.measureText(text).width;
+    const inside = island.r * 2 >= Math.max(ISLAND_LABEL_INSIDE_MIN_PX, width + 12);
+    const box = inside
+      ? { x: island.x - width / 2, y: island.y - lineHeight / 2, width, height: lineHeight }
+      : { x: island.x - width / 2, y: island.y + island.r + 3, width, height: lineHeight };
+    if (box.x < 2 || box.x + box.width > frame.width - 2 || box.y < 2 || box.y + box.height > frame.height - 2) continue;
+    if (placed.some((other) => overlaps(box, other))) continue;
+    placed.push(box);
+    frame.islandReport?.push(island.id);
+    // A ground plate under every name: inside, it stands on the dots; under, it can stand
+    // on a neighbour's rim. Either way the name is read off the ground, not off the texture.
+    const presence = (1 - dim * 0.5) * easeMotion(island.arrival ?? 1);
+    ctx.fillStyle = ink.ground;
+    ctx.globalAlpha = presence * 0.78;
+    ctx.fillRect(box.x - 4, box.y, box.width + 8, box.height);
+    ctx.globalAlpha = presence;
+    ctx.fillStyle = inside ? ink.labelInk : ink.sourceLabel;
+    ctx.fillText(text, island.x, box.y + box.height / 2);
+  }
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
+  ctx.globalAlpha = 1;
+}
+
 export function hitTestLibraryGraph(
   frame: Pick<LibraryGraphFrame, "nodes" | "positions" | "radii">,
   point: LayoutPoint,
   /** Extra reach around the mark. The caller widens it for a coarse pointer. */
   reachBonus: number = FINE_HIT_REACH,
+  /**
+   * The least a mark may be, on screen, to be the thing under the pointer. On the overview
+   * a dot two pixels across is texture, and the island it sits on is what a press means;
+   * once the camera has closed in and a dot is a mark, it is pressable again.
+   */
+  minRadius = 0,
 ): LibraryGraphNode | null {
   let best: LibraryGraphNode | null = null;
   let bestDistance = Infinity;
   for (const node of frame.nodes) {
     const centre = frame.positions.get(node.id);
     if (!centre) continue;
+    const radius = radiusOf(frame, node);
+    // A mark with no radius is a concept standing for its island on the overview: the
+    // island is what a press lands on, not the point at its centre.
+    if (radius <= 0 || radius < minRadius) continue;
     const dx = point.x - centre.x;
     const dy = point.y - centre.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    const reach = radiusOf(frame, node) + reachBonus;
+    const reach = radius + reachBonus;
     if (distance <= reach && distance < bestDistance) {
       best = node;
       bestDistance = distance;
@@ -507,6 +645,40 @@ export function hitTestLibraryGraph(
  * scatter of curves; and since every edge in this graph leaves a page, that side is
  * always the same side of the page too.
  */
+/**
+ * The two control points of a column-to-column edge: horizontal tangents at both ends, so
+ * every line leaves and arrives level and a bundle of citations reads as a sheaf rather
+ * than a scatter of bows (the Architecture canvas's own edge grammar).
+ */
+function flowEdgeControls(from: LayoutPoint, to: LayoutPoint): [LayoutPoint, LayoutPoint] {
+  const reach = Math.abs(to.x - from.x) * 0.5;
+  const sign = to.x >= from.x ? 1 : -1;
+  return [
+    { x: from.x + sign * reach, y: from.y },
+    { x: to.x - sign * reach, y: to.y },
+  ];
+}
+
+/**
+ * Where an unverified citation breaks in the flow picture, as a fraction of the curve from
+ * the page (every edge starts at the write-up). At the midpoint every break of a folder
+ * stood on one vertical between the columns and read as a fourth column of amber; at
+ * 0.22 an island where every page was stale still drew them as one slit down the picture
+ * (owner screenshot, 2026-09-18). Just short of the page, where the lines have already
+ * converged, the break reads as what it is — this write-up did not receive what its
+ * file now says — and a folder of stale pages reads as stale pages, not a fault line.
+ */
+const FLOW_BREAK_T = 0.12;
+
+/** One point on the cubic, for the break in an unverified citation. */
+function cubicAt(from: LayoutPoint, c1: LayoutPoint, c2: LayoutPoint, to: LayoutPoint, t: number): LayoutPoint {
+  const u = 1 - t;
+  return {
+    x: u * u * u * from.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * to.x,
+    y: u * u * u * from.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * to.y,
+  };
+}
+
 export function edgeControlPoint(from: LayoutPoint, to: LayoutPoint): LayoutPoint {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -601,6 +773,9 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
   ctx.globalAlpha = 1;
   drawGround(ctx, frame);
 
+  // ── Islands under everything: a body, a shore, and a name. ──
+  if (frame.islands && frame.islands.length > 0) drawIslands(ctx, frame, ink);
+
   // ── Edges first, so no line crosses the mark it points at. ──
   // `butt`, not `round`: a round cap adds half a line width to each dash end, which
   // measured a 0.64 duty cycle on a `[3, 3]` pattern — the gap a person is supposed to
@@ -617,6 +792,10 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
     // Pointing at a dot is a question about its links, so its links answer. This is also
     // what gives every edge a reading well above the 3:1 floor on demand.
     const touchesActive = active !== null && (edge.source === active || edge.target === active);
+    // The overview draws no line at rest: ten thousand citations are a grey field, and the
+    // islands already say which files each topic read. A pointed-at or held mark still
+    // answers with its own lines.
+    if (frame.focusEdgesOnly && !touchesSelection && !touchesActive && !(focus?.has(edge.source) && focus?.has(edge.target))) continue;
     /*
      * An edge is as present as its dimmer end. A line from a full-ink node to a dimmed one
      * that stayed bright would claim a relationship the dimming has just said is not the
@@ -662,6 +841,33 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
     // stay legible against a line that is itself wider on an emptier canvas.
     ctx.lineWidth =
       relationWidth * (touchesSelection ? 1.5 : touchesActive ? 1.33 : 1);
+    if (frame.layout === "flow") {
+      const [c1, c2] = flowEdgeControls(from, to);
+      if (edge.certainty === "unverified") {
+        // The same break as the bowed line: two pieces of the curve with a gap at its middle.
+        const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+        const half = Math.min(BROKEN_EDGE_GAP, length / 3) / 2 / length;
+        const steps = 12;
+        ctx.moveTo(from.x, from.y);
+        for (let i = 1; i <= steps; i += 1) {
+          const t = (FLOW_BREAK_T - half) * (i / steps);
+          const point = cubicAt(from, c1, c2, to, t);
+          ctx.lineTo(point.x, point.y);
+        }
+        const resume = cubicAt(from, c1, c2, to, FLOW_BREAK_T + half);
+        ctx.moveTo(resume.x, resume.y);
+        for (let i = 1; i <= steps; i += 1) {
+          const t = FLOW_BREAK_T + half + (1 - FLOW_BREAK_T - half) * (i / steps);
+          const point = cubicAt(from, c1, c2, to, t);
+          ctx.lineTo(point.x, point.y);
+        }
+      } else {
+        ctx.moveTo(from.x, from.y);
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
+      }
+      ctx.stroke();
+      continue;
+    }
     const control = edgeControlPoint(from, to);
     if (edge.certainty === "unverified") {
       /*
@@ -831,8 +1037,13 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
       if (!from || !to) continue;
       const pulsing = flow !== null && flow.pulse.has(edge.id);
       const rise = pulsing ? breath : 0;
-      const control = edgeControlPoint(from, to);
-      const middle = quadraticAt(from, control, to, 0.5);
+      const middle =
+        frame.layout === "flow"
+          ? (() => {
+              const [c1, c2] = flowEdgeControls(from, to);
+              return cubicAt(from, c1, c2, to, FLOW_BREAK_T);
+            })()
+          : quadraticAt(from, edgeControlPoint(from, to), to, 0.5);
       const gap = Math.min(BROKEN_EDGE_GAP, Math.hypot(to.x - from.x, to.y - from.y) / 3);
       const radius =
         Math.max(STALE_DOT_RADIUS_MIN, Math.min(STALE_DOT_RADIUS, gap / 2)) + STALE_DOT_BREATH * rise;
@@ -854,14 +1065,117 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
   }
 
   // ── Nodes. ──
+  /*
+   * **On the overview a stale page is an amber dot.** With no line drawn at rest there is
+   * no break to carry the amber, and the state a person came to see at a glance — where
+   * has the wiki gone stale — would vanish exactly where the folder is large enough to
+   * need it. The dot takes the same standing-amber ink the break's dot takes.
+   */
+  const stalePages = new Set<string>();
+  if (frame.layout === "islands") for (const edge of frame.edges) if (edge.certainty === "unverified") stalePages.add(edge.source);
+  /*
+   * **The overview at rest is painted in four fills, not eleven thousand.** Measured on
+   * 11,240 marks (2026-09-18): the per-mark loop below — a halo and a mark each, with its
+   * own path — cost 20 ms a frame, past the 16.7 ms a hover ramp has. At rest on the
+   * overview no line is drawn, so no halo is needed, and no dot is dimmed, hovered,
+   * selected or arriving, so every dot of one ink can go into one path: the files, the
+   * fresh pages, the stale pages. The moment any of those states holds, the loop below
+   * paints the frame as it always did.
+   */
+  const quietOverview =
+    frame.layout === "islands" &&
+    (frame.dim ?? 0) === 0 &&
+    frame.selectedId === null &&
+    frame.hoveredId === null &&
+    frame.focusedId === null &&
+    (flow === null || (flow.arrived.size === 0 && flow.edges.size === 0));
+  if (quietOverview) {
+    ctx.globalAlpha = 1;
+    const groups: Array<{ ink: string; square: boolean; test: (node: LibraryGraphNode) => boolean }> = [
+      { ink: ink.source, square: true, test: (node) => node.kind === "source" },
+      { ink: ink.page, square: false, test: (node) => node.kind === "page" && !stalePages.has(node.id) },
+      { ink: ink.stale, square: false, test: (node) => node.kind === "page" && stalePages.has(node.id) },
+    ];
+    for (const group of groups) {
+      ctx.beginPath();
+      for (const node of frame.nodes) {
+        if (!group.test(node)) continue;
+        const centre = nodeCentre(frame, node.id);
+        if (!centre) continue;
+        const radius = radiusOf(frame, node);
+        if (radius <= 0) continue;
+        if (group.square) ctx.rect(centre.x - radius, centre.y - radius, radius * 2, radius * 2);
+        else {
+          ctx.moveTo(centre.x + radius, centre.y);
+          ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+        }
+      }
+      ctx.fillStyle = group.ink;
+      ctx.fill();
+    }
+  }
+  /*
+   * **Marks leaving or arriving are painted in batches.** Opening an island of a
+   * 3,424-mark folder leaves three thousand ghosts fading for one `--motion-base`, each
+   * with the same alpha; drawn one path at a time they cost 25–58 ms a frame (measured
+   * 2026-09-18, the open, the return and a wheel that opened), which is the hitch a
+   * person feels exactly on the transition. A ghost and an arrival carry no state — no
+   * hover, no selection, no halo worth the paint — so every translucent mark of one kind
+   * and one alpha step goes into one path, and the loop below skips it.
+   */
+  const batched = new Set<string>();
+  if (opacity && opacity.size > 0 && !quietOverview) {
+    const groups = new Map<string, { ink: string; square: boolean; alpha: number; centres: Array<{ x: number; y: number; r: number }> }>();
+    for (const node of frame.nodes) {
+      const alpha = opacity.get(node.id);
+      if (alpha === undefined || alpha >= 1) continue;
+      if (node.id === frame.selectedId || node.id === frame.hoveredId || node.id === frame.focusedId) continue;
+      if (flow?.arrived.has(node.id)) continue;
+      if (node.kind === "source" && node.state === "not-compiled") continue;
+      if (node.kind === "concept") continue;
+      const centre = nodeCentre(frame, node.id);
+      if (!centre) continue;
+      const radius = radiusOf(frame, node);
+      if (radius <= 0) continue;
+      const step = Math.round(attention(node.id) * alpha * 32) / 32;
+      const inkFor = node.kind === "page" ? (stalePages.has(node.id) ? ink.stale : ink.page) : ink.source;
+      const key = `${node.kind}:${inkFor}:${step}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { ink: inkFor, square: node.kind === "source", alpha: step, centres: [] };
+        groups.set(key, group);
+      }
+      group.centres.push({ x: centre.x, y: centre.y, r: radius });
+      batched.add(node.id);
+    }
+    for (const group of groups.values()) {
+      if (group.alpha <= 0) continue;
+      ctx.globalAlpha = group.alpha;
+      ctx.fillStyle = group.ink;
+      ctx.beginPath();
+      for (const centre of group.centres) {
+        if (group.square) ctx.rect(centre.x - centre.r, centre.y - centre.r, centre.r * 2, centre.r * 2);
+        else {
+          ctx.moveTo(centre.x + centre.r, centre.y);
+          ctx.arc(centre.x, centre.y, centre.r, 0, Math.PI * 2);
+        }
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
   for (const node of frame.nodes) {
+    if (quietOverview) break;
+    if (batched.has(node.id)) continue;
     const centre = nodeCentre(frame, node.id);
     if (!centre) continue;
     const radius = radiusOf(frame, node);
+    // A mark with no radius is a concept standing for its island: the island is drawn, not it.
+    if (radius <= 0) continue;
     const isSelected = node.id === frame.selectedId;
     const isHovered = node.id === frame.hoveredId;
     const isFocused = node.id === frame.focusedId;
-    const ownInk = node.kind === "page" ? ink.page : node.kind === "source" ? ink.source : ink.concept;
+    const ownInk = node.kind === "page" ? (stalePages.has(node.id) ? ink.stale : ink.page) : node.kind === "source" ? ink.source : ink.concept;
     const mark = isSelected ? ink.selected : ownInk;
 
     /*
@@ -967,6 +1281,9 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
   }
   ctx.globalAlpha = 1;
 
+  // ── The islands' names, on top of their dots. ──
+  if (frame.islands && frame.islands.length > 0) drawIslandNames(ctx, frame, ink);
+
   // ── Real work, bounded to the node it actually touched. ──
   drawActivityMarks(ctx, frame);
 
@@ -996,7 +1313,7 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
    * themselves are occupied first: a name may lose to a **dot** as well as to another name,
    * which is what stops a label from sitting on top of the thing it is not naming.
    */
-  if (frame.standingLabels) {
+  if (frame.standingLabels || frame.layout === "flow") {
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
     const taken: Array<{ x: number; y: number; width: number; height: number; of?: string }> = [];
@@ -1041,8 +1358,8 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
     };
     /** Whether a file's or a concept's name exists on this frame at all. */
     const carriesName = (node: LibraryGraphNode): boolean => {
-      if (node.kind === "page") return true;
-      if (frame.sourceLabels) return true;
+      if (node.kind === "page") return frame.pageLabels ?? true;
+      if (node.kind === "concept" ? (frame.conceptLabels ?? frame.sourceLabels) : frame.sourceLabels) return true;
       if (node.id === frame.selectedId || node.id === active) return true;
       return focus !== null && focus.has(node.id);
     };
@@ -1095,12 +1412,24 @@ export function drawLibraryGraph(ctx: CanvasRenderingContext2D, frame: LibraryGr
         Math.max(2, centre.x - width / 2),
         Math.max(2, frame.width - 2 - width),
       );
-      const candidates = [
-        { x: centred, y: centre.y + half + STANDING_LABEL_GAP },
-        { x: centred, y: centre.y - half - STANDING_LABEL_GAP - lineHeight },
-        { x: centre.x + half + STANDING_LABEL_GAP, y: centre.y - lineHeight / 2 },
-        { x: centre.x - half - STANDING_LABEL_GAP - width, y: centre.y - lineHeight / 2 },
-      ];
+      const under = { x: centred, y: centre.y + half + STANDING_LABEL_GAP };
+      const over = { x: centred, y: centre.y - half - STANDING_LABEL_GAP - lineHeight };
+      const right = { x: centre.x + half + STANDING_LABEL_GAP, y: centre.y - lineHeight / 2 };
+      const left = { x: centre.x - half - STANDING_LABEL_GAP - width, y: centre.y - lineHeight / 2 };
+      /*
+       * **In the flow picture a name stands on the side its column keeps clear.** The
+       * layout leaves `FLOW_LABEL_ROOM_PX` outside the outer columns for exactly this: a
+       * file's name to the left of its square, where no edge runs, and a page's or a
+       * concept's to the right of its disc. Under-first is the force picture's rule, where a
+       * mark has no side of its own; in columns a name under a mark is a name on the next
+       * row's edges, and a file's name to its right is a name across every citation it has.
+       */
+      const candidates =
+        frame.layout === "flow"
+          ? node.kind === "source"
+            ? [left, right, under, over]
+            : [right, left, under, over]
+          : [under, over, right, left];
       /*
        * ⚠️ **A name that loses all four places is pushed out on a leader, not deleted.**
        *
