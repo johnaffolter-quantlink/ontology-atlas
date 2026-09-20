@@ -32,7 +32,7 @@ function runner(overrides: Partial<RoundsRunnerValue> = {}): RoundsRunnerValue {
     connectors: [],
     lastTickAt: null,
     revision: 1,
-    save: vi.fn(async () => true),
+    save: vi.fn(async () => ({ ok: true, startedNow: false })),
     remove: vi.fn(async () => true),
     setEnabled: vi.fn(async () => true),
     runNow: vi.fn(),

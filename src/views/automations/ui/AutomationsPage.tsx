@@ -64,9 +64,11 @@ export function AutomationsPage({
 
   const saveOntology = async (round: RoundRecord) => {
     if (!runner) return false;
-    const saved = await runner.save(round);
-    if (saved) toast.show(t("saved", { name: round.name }), "success");
-    return saved;
+    // `save` answers `{ ok, startedNow }`; an ontology round never starts its first pass on
+    // save, so only the verdict is read here.
+    const { ok } = await runner.save(round);
+    if (ok) toast.show(t("saved", { name: round.name }), "success");
+    return ok;
   };
 
   const cadenceLabel = (round: RoundRecord) => {
