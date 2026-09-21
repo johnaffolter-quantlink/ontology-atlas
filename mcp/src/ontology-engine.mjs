@@ -7,8 +7,15 @@ import { buildSlugNotFoundGrowthHint } from './growth-hint.mjs';
 const DEFAULT_LIMIT = 100;
 const DEFAULT_ALL_PATHS_SEARCH_BUDGET = 5000;
 const MAX_ALL_PATHS_SEARCH_BUDGET = 50000;
-import { defaultBody } from './schema.mjs';
+import { defaultBody, folderForKind } from './schema.mjs';
 import { hasCapabilityImplementationEvidence } from './capability-evidence.mjs';
+import {
+  boundaryFindings,
+  definitionFinding,
+  epistemicExclusionFinding,
+  uncertaintyFinding,
+} from './meaning-findings.mjs';
+import { slugOutsideKindFolderMessage } from './construction-rules.mjs';
 
 /**
  * Is this body still the template `add_concept` writes when no body is given?
@@ -250,7 +257,66 @@ export const MAINTENANCE_KIND_VALUES = Object.freeze([
   //     and a compiled snapshot sees neither; only Git history separates the
   //     judgement from the membership it judges.
   'rejudge_summary_membership',
+  // The body half of the same door (2026-09-21). Every check above this block
+  // judges frontmatter, and the measured build path — the app's ACP session,
+  // which has no independent evaluator lane — lands through `add_concept` /
+  // `add_concepts` / `patch_concept`. What came through carried a starter body
+  // instead of a definition, exclusions that were evidence limits rather than
+  // product boundaries, and evidence naming a folder whose drift can never be
+  // checked (51 of 107 cited paths in this repository's own vault). Four kinds
+  // rather than one, because the four are different work and a single bucket
+  // would let one answer read as all four.
+  //
+  // All four are `review` / `info` and never executable: no tool call writes a
+  // definition, and offering one would be the scaffold that produced the
+  // problem.
+  'definition_missing',
+  'boundary_missing',
+  'epistemic_exclusion',
+  'folder_only_evidence',
+  // A node written outside its kind folder (2026-09-21). A trial built an
+  // entire vault flat at the root and `validate_vault` answered 0 issues, so
+  // the product never stated the convention it expects. `review` / `info` and
+  // not executable: the repair is a `rename_concept` whose dry-run a person
+  // reads first, and handing over a ready-made rename of every node at once is
+  // exactly the scaffold that makes a queue dangerous.
+  'slug_outside_kind_folder',
+  // A node that records no unknown (2026-09-21). It claims completeness, and
+  // the claim is always false: the builder read some files and not others, and
+  // which ones is the fact a later reader most needs and can least recover.
+  'uncertainty_missing',
 ]);
+/**
+ * Write-gate finding code → maintenance kind, and the score each carries.
+ *
+ * One table read by both halves (the write-path hand-off and the vault-wide
+ * scan) so the queue cannot rank the same question two different ways
+ * depending on which half found it.
+ */
+const MEANING_GAP_KIND_BY_CODE = Object.freeze({
+  'definition-missing': 'definition_missing',
+  'boundary-missing': 'boundary_missing',
+  'epistemic-exclusion': 'epistemic_exclusion',
+  'folder-only-evidence': 'folder_only_evidence',
+  'slug-outside-kind-folder': 'slug_outside_kind_folder',
+  'uncertainty-missing': 'uncertainty_missing',
+});
+const MEANING_GAP_SCORE_BY_CODE = Object.freeze({
+  'definition-missing': 0.6,
+  'boundary-missing': 0.55,
+  // Ranked above the other two: an exclusion that is really an evidence limit
+  // is the one defect a source-hidden reader repeats as an established fact.
+  'epistemic-exclusion': 0.7,
+  'folder-only-evidence': 0.5,
+  // Lowest of the five. Nothing is wrong with the node itself — it reads worse
+  // and groups with nothing, and the repair moves a file rather than writing
+  // meaning, so it waits behind every question about what a node means.
+  'slug-outside-kind-folder': 0.35,
+  // Beside the boundary questions: it is the same kind of work, one sentence
+  // the writer alone can supply, and nothing else in the vault can stand in.
+  'uncertainty-missing': 0.55,
+});
+
 const MAINTENANCE_PHASES = new Set(MAINTENANCE_PHASE_VALUES);
 const MAINTENANCE_SEVERITIES = new Set(MAINTENANCE_SEVERITY_VALUES);
 const MAINTENANCE_KINDS = new Set(MAINTENANCE_KIND_VALUES);
@@ -2859,6 +2925,91 @@ export function createOntologyEngine(artifact, options = {}) {
   }
 
   /**
+   * Concepts whose body never became meaning.
+   *
+   * ## Why this has a vault-wide half at all
+   *
+   * The write gate says it once, at the moment the author still has the file in
+   * hand. That is the right moment and the wrong lifetime: a finding delivered
+   * once and drained is not a queue. `capability_without_evidence` solved the
+   * same problem by existing at two times, and this follows it exactly — one
+   * question, asked while writing and asked again until it is answered.
+   *
+   * ## Why it goes quiet without `sourceDocs`
+   *
+   * A compiled artifact carries no bodies. Guessing from the frontmatter alone
+   * would mean accusing every node in the vault of a defect nothing measured,
+   * so without bodies this reports nothing — the same degradation
+   * `retire_unearned_node`'s starter-body half already accepts. Nothing here
+   * infers absence from silence; an empty result means the bodies were not
+   * loaded, not that they are fine.
+   */
+  function meaningGapCandidates(limit) {
+    const rows = [];
+    for (const node of [...nodes].sort((a, b) => a.slug.localeCompare(b.slug))) {
+      const doc = sourceDocBySlug.get(node.slug);
+      if (!doc || typeof doc.body !== 'string') continue;
+      const input = { kind: node.kind, slug: node.slug, title: node.title, body: doc.body };
+      const found = [
+        definitionFinding(input),
+        ...boundaryFindings(input),
+        uncertaintyFinding(input),
+        epistemicExclusionFinding(input),
+      ].filter(Boolean);
+      for (const finding of found) {
+        rows.push({
+          kind: MEANING_GAP_KIND_BY_CODE[finding.code],
+          score: MEANING_GAP_SCORE_BY_CODE[finding.code],
+          slug: node.slug,
+          reason: finding.message,
+          node: summarizeNode(node),
+        });
+      }
+    }
+    return {
+      ...limitedCandidateGroup(rows, limit),
+      // Every match, not only the returned page: the write-path finding for the
+      // same node and the same question is deduped against this below, and a row
+      // that fell off the page is still the same row.
+      keys: rows.map((row) => `${row.kind}\0${row.slug}`),
+    };
+  }
+
+  /**
+   * Nodes written outside their kind folder.
+   *
+   * Unlike the three body questions above, this one needs nothing the compiled
+   * artifact does not already carry — a slug and a kind — so it answers on every
+   * `maintenance_plan` call, bodies or no bodies. That matters because the vault
+   * it was measured on was built entirely flat: if this went quiet without
+   * `sourceDocs`, the one vault that most needed telling would be the one told
+   * nothing.
+   */
+  function slugOutsideKindFolderCandidates(limit) {
+    const rows = [];
+    for (const node of [...nodes].sort((a, b) => a.slug.localeCompare(b.slug))) {
+      if (typeof node.kind !== 'string' || typeof node.slug !== 'string') continue;
+      const folder = folderForKind(node.kind);
+      if (!folder || node.slug.startsWith(folder)) continue;
+      rows.push({
+        kind: 'slug_outside_kind_folder',
+        score: MEANING_GAP_SCORE_BY_CODE['slug-outside-kind-folder'],
+        slug: node.slug,
+        reason: slugOutsideKindFolderMessage({
+          slug: node.slug,
+          kind: node.kind,
+          canonicalSlug: `${folder}${node.slug}`,
+        }),
+        node: summarizeNode(node),
+      });
+    }
+    return {
+      ...limitedCandidateGroup(rows, limit),
+      keys: rows.map((row) => `${row.kind}\0${row.slug}`),
+    };
+  }
+
+  /**
    * Bridge nodes that group nothing — the fourth bridge condition, enforced.
    *
    * ## Why the predicate is this narrow
@@ -3286,6 +3437,18 @@ export function createOntologyEngine(artifact, options = {}) {
       // missing; this one fires once, at the moment the author still has the file
       // in hand. Same kind on purpose — it is one question, asked at two times.
       'capability-without-evidence': { kind: 'capability_without_evidence', phase: 'review', severity: 'info', score: 0.5 },
+      // The body findings, same two-times shape as the line above: the write
+      // path speaks once while the author still has the file in hand, and the
+      // vault-wide half below keeps asking as long as the answer is missing.
+      // `folder-only-evidence` has no vault-wide half — deciding whether a
+      // cited path is a directory needs the repository root, which the write
+      // door grounds and a compiled snapshot does not carry.
+      ...Object.fromEntries(
+        Object.entries(MEANING_GAP_KIND_BY_CODE).map(([code, kind]) => [
+          code,
+          { kind, phase: 'review', severity: 'info', score: MEANING_GAP_SCORE_BY_CODE[code] },
+        ]),
+      ),
     };
     const rows = [];
     for (const finding of nodeEligibilityFindings) {
@@ -3330,6 +3493,8 @@ export function createOntologyEngine(artifact, options = {}) {
     const emptyDomains = emptyDomainCandidates(limit);
     const unearnedNodes = unearnedNodeCandidates(limit);
     const capabilitiesWithoutEvidence = capabilityWithoutEvidenceCandidates(limit);
+    const meaningGaps = meaningGapCandidates(limit);
+    const flatSlugs = slugOutsideKindFolderCandidates(limit);
     const canonicalizationActions = Array.isArray(artifact?.canonicalizationActions)
       ? artifact.canonicalizationActions
       : [];
@@ -3446,12 +3611,23 @@ export function createOntologyEngine(artifact, options = {}) {
         node: row.node,
       });
     }
+    for (const row of [...meaningGaps.rows, ...flatSlugs.rows]) {
+      actions.push({
+        phase: 'review',
+        kind: row.kind,
+        severity: 'info',
+        score: row.score,
+        reason: row.reason,
+        node: row.node,
+      });
+    }
 
     // A freshly written node is caught by two paths at once — the write gate, then
     // the full vault scan. Writing the same question about the same node on two
     // rows makes the queue generate its own noise, so whatever the full scan
     // already said is dropped here.
     const capabilitiesWithoutEvidenceSlugs = new Set(capabilitiesWithoutEvidence.slugs ?? []);
+    const meaningGapKeys = new Set([...(meaningGaps.keys ?? []), ...(flatSlugs.keys ?? [])]);
     for (const action of nodeEligibilityActions()) {
       if (
         action.kind === 'capability_without_evidence' &&
@@ -3459,6 +3635,10 @@ export function createOntologyEngine(artifact, options = {}) {
       ) {
         continue;
       }
+      // Same rule for the body questions: the full scan above already asked
+      // them about this node, and the queue generating its own duplicates is
+      // how a channel teaches the reader to skim it.
+      if (meaningGapKeys.has(`${action.kind}\0${action.node?.slug}`)) continue;
       actions.push(action);
     }
 
@@ -3504,6 +3684,13 @@ export function createOntologyEngine(artifact, options = {}) {
         unassignedNodes: unassignedNodes.total,
         emptyDomains: emptyDomains.total,
         capabilitiesWithoutEvidence: capabilitiesWithoutEvidence.total,
+        // ⚠️ No `meaningGaps:` counter here, deliberately. The published
+        // `maintenance_plan` summary schema is closed
+        // (`server/tool-schemas.mjs`, `additionalProperties: false`) and adding
+        // a key to it is a public contract change with its own review. The four
+        // body kinds are counted where every other kind is — `byKind`,
+        // `byPhase`, `bySeverity`, and `totalActions` — which is what a caller
+        // filters and pages on.
       },
       filters: {
         executableOnly,
