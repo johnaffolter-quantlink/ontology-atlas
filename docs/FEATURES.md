@@ -84,7 +84,7 @@ work here, and where it can.
 | Read / edit / create nodes in that folder | ✅ | ✅ | same parser, same schema, same files |
 | Remember the folder between visits | ❌ pick it again | ✅ | web keeps an FSA handle in its own IndexedDB; a convenience cache, not the source of truth |
 | Resume a single folder on launch | ❌ the browser needs a click for permission, and the chooser says so | ✅ opens it directly | File System Access permission has to come from a gesture, so the web presses something either way |
-| Choose between known folders on launch | ✅ | ✅ | two or more known folders open a wide list with Open folder and Create new above it; the page owns scrolling, and rows retain paths, counts, last-use and recovery actions; one folder resumes directly |
+| Choose between known folders on launch | ✅ | ✅ | two or more known folders open a fixed chooser with Open folder and Create new above an internally scrolling list; names wrap and paths keep their full value on hover; unavailable rows retain recovery/removal actions; constrained height or larger text folds optional guidance into an accessible help dialog so the list stays usable; one folder resumes directly |
 | See which folder is open, and leave it | ✅ | ✅ | the folder's name sits at the top of the rail on every destination and opens the switcher; each row carries the folder's contents, its last opening, and whether it opens now |
 | Map entry feedback | ✅ | ✅ | sidebar and G M map entry show a live preparation scene before navigation; the first canvas draw releases it, and another destination or the return action can cancel the pending entry |
 | Work offline | ❌ | ✅ | |
@@ -449,8 +449,9 @@ had become false).
   with its purpose. Opening a saved constellation focuses that whole set through
   `?constellation=<folder UUID>`; `?constellation=new` opens the creation editor.
   The set is durable task context, not a new graph kind or relation.
-  Two cached diffuse-gas layers drift slowly within the fixed arms and breathe
-  only in luminance; concept positions and the anchored base field never move.
+  Two cached diffuse-gas layers carry fine dust through shallow counter-moving
+  arcs inside the fixed arms; concept positions and the anchored base field never move.
+  Three cached texture draws avoid rebuilding the dust particles on every frame.
   Reduced motion freezes the atmosphere and omits the meteor. Galaxy inspection
   keeps the expanded constellation mounted and smoothly approaches the selected
   star in the free canvas beside the inspector. It never zooms out a view the
@@ -765,6 +766,14 @@ servers wired over the agent connection; Gated holds the hooks that can refuse a
 had never shown anywhere — and the files under `.githooks/`; Watched holds the hooks that only
 record, the check scripts a command names, the test files a runner discovers by itself, and the
 workflows that run after a push.
+
+Structure starts as a connected diagram of this measured repository composition, with a Text
+alternative over the same model. Selecting a part reveals its evidence immediately below that
+part. The page header and presentation switch stay fixed. The compact overview fits a desktop
+viewport; expanded evidence, larger text and smaller windows scroll only within the work area.
+Connections are composition, not proof of runtime execution; missing parts and tool-owned
+state keep their distinct meanings. Unbound and browser-only states show a labelled illustrative
+scene with a source-connection or app-download action, respectively.
 
 **What the repository keeps out of sight is a gate too** (2026-09-20). Gated carries the exclusion
 files, and the row prints the name each product actually uses rather than one word for all of them:
@@ -1893,7 +1902,32 @@ surface chrome.
 
 ---
 
+### `/automations` — Schedules and their results
+
+The installed app keeps Ontology and Documents in separate tabs. Each schedule row
+shows its state, cadence, next due time, and latest result. Opening a row reveals
+its latest report and the Run now, Pause/Resume, and Remove actions (removal requires
+an inline confirmation);
+older runs expand on demand. Document results retain checked counts, stale pages,
+updated files, and tool receipts when recorded. An empty lane presents one first
+schedule action. Without a folder, the installed app opens a folder in place.
+The browser explains the installed-app requirement.
+
+A missing schedule file is a valid empty collection and offers the first schedule action.
+Unreadable or malformed files remain protected from overwrite. Switching lanes temporarily
+disables the previous lane's create action until navigation commits.
+
+Ontology schedules stay read-only: they may inspect evidence and propose changes,
+never write concepts, relations, files, or meaning receipts. Document rounds keep
+their previously approved Library scope. Both execute locally while the app has
+the folder open; this redesign does not add a background service.
+
 ### `/ontology/insights` — Analysis (a brief, then one subject at a time)
+
+The destination first paints its title and an accessible “Preparing analysis”
+state, then loads and mounts the analysis workbench. Navigation remains available
+while the analysis code loads. This is a visible loading boundary, not a worker
+that moves graph derivation off the main thread.
 
 **Two levels, two kinds of control** (2026-09-19). The first row names the subject the screen
 is about — Brief (all of them) · Concepts · Wiki · Guidance — and wears a `SegmentedControl`,
@@ -1938,12 +1972,41 @@ Domain boundaries. Scroll contract: every tab stays ≤ 1.3× viewport.
 - `SegmentedControl` — Brief (default) · Concepts · Wiki · Guidance. `TabBar` under it, for Concepts only — To fix / Missing concepts / Inventory / Relations / Domain boundaries / Accumulation / Product flow. Tab state stays in `?tab=`; the default omits it, so `/ontology/insights/` is the brief, the to-do list is `?tab=do-next` and the two single-view subjects are `?tab=library` and `?tab=harness`. Choosing Concepts lands on its first question rather than an empty shelf. The first four question badges count what their tabs are about (verdict total / nodes / edges / cross-domain relations); Accumulation and Product flow leave the slot empty because neither has an honest single count. Legacy `?tab=structure|overview` → Inventory, `?tab=relations` → Relations, `?tab=freshness` → Accumulation, so bookmarks and agent return-chip links stay alive. The census strip and the ontology handoff row draw on the Concepts subject only: four ontology numbers above a screen about the wiki is the confusion the first row exists to end.
 
 #### Wiki (single view)
+- Without sources or pages, a labelled example shows the source → wiki page →
+  checks sequence. Selecting a stage reveals setup guidance and a Library link;
+  it does not start a job or create example data. Source changes request review,
+  rather than asserting that the page's meaning is wrong.
 - The same model the Library screen renders from (`useLibraryModel`, the rounds ledger), read for the questions a person arrives at Analysis with: pages whose cited source changed underneath, sources nobody has written up, what the format check flagged (blocking kinds first, advisory after, each naming its pages), and what the unattended passes did. Every row opens `/library` to act; nothing is written here and no list is a second copy of a store.
-- With no wiki and no sources it still says what the panel answers and opens the Library.
 
 #### Guidance (single view)
-- The coverage table's own rows: per vault domain, how many declarations tell, gate and watch it, with a zero drawn as a dash a reader can count rather than a score, plus the mirror findings where the two agent trees disagree. Rows open `/architecture?view=coverage` and `?view=guides`.
-- Its four honest states are distinct: a browser cannot read dot folders (offers the app), the scan is still reading, the scan failed, or this vault is not bound to a code repository — the last one is what a fresh ontology folder actually hits, and saying "get the app" there, inside the app, was the defect that sent this panel back. Where it cannot measure it still explains what telling, gating and watching mean.
+- Measured Guidance starts with an unboxed domain diagram. Instructions, Hooks,
+  and Checks & workflows keep fixed positions and exact scoped declaration
+  counts; only nonzero attributions have connections. Diagram and Text read the
+  same complete population, including domains beyond eight, inside one bounded
+  scrolling work area. Neither view is a score or an execution graph.
+- Selecting a role opens one anchored evidence popup on desktop or one dialog
+  on narrow screens. It shows the domain purpose, complete source identities,
+  extracted scope and canonically matched capability entrypoints. An empty
+  extraction is explicit, not an invented wildcard. Changing reading mode
+  dismisses the old popup; an anchor that leaves view closes it without sending
+  focus offscreen or resetting the reader's scroll position.
+- Compact actions expose separately counted declarations by role, scoped
+  declarations outside the recorded domain mapping, capability entrypoints not
+  reached by path-scoped instructions, and all guidance/configuration findings.
+  These are distinct populations, not one combined total. Separate declarations
+  have no extracted scope or reach every recorded domain; this is not proof of
+  applicability to every repository path. Discovered test files remain separate
+  from check declarations and executed results.
+- Findings retain their complete paths and messages on request. Independent
+  Codex/Claude instruction differences may be informational and do not require
+  identical harnesses. The full Harness destination remains available; inspecting
+  these lists neither edits the vault nor accepts meaning.
+- Unavailable measurements retain their actual state: browser-only access,
+  reading, failed reading, or inability to identify one bound code repository
+  (including absent or ambiguous bindings). A labelled example connects a code
+  area to instructions, gates and checks; selecting a role explains its setup
+  and opens the existing Harness destination. Examples contain no measured
+  counts or execution verdicts. The native app never offers its own download.
 
 #### Tab 1 — Do next
 - **One row per finding group** (2026-09-06, `lib/do-next-groups.ts`): name · count · disclosure, five rows per opened group with its own "N more"; the first group starts open so the most urgent files are named without a click. Group counts are the verdict's own signal counts re-keyed and `tests/contract/do-next-group-sum.contract.test.ts` pins their sum to the title count. The badge is the single verdict model (`insights-verdict`) shared with the body. The picks band and the readiness gauge are gone.
