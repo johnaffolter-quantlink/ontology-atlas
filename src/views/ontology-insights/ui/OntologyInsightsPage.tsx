@@ -20,6 +20,7 @@ import {
   computeEdgeTypeDistribution,
   rankAllByDegree,
   resolveNodeAgentTarget,
+  type MeaningFindingGapKind,
 } from "@/entities/knowledge-graph";
 import {
   useOntologyInsight,
@@ -957,17 +958,34 @@ export function OntologyInsightsPage() {
     insightsPanelRef.current?.focus();
   }, [tab]);
 
+  const findingReviewRows = useMemo(
+    () => Object.values(meaningGapResult.findingRows).flat(),
+    [meaningGapResult.findingRows],
+  );
   const activeReviewIds = useMemo(
     () =>
       new Set([
         ...doNextQueue.activeRowIds,
         ...dependencyCycles.activeCycleIds.map((id) => `cycle:${id}`),
+        ...findingReviewRows.map((row) => row.id),
       ]),
-    [doNextQueue.activeRowIds, dependencyCycles.activeCycleIds],
+    [doNextQueue.activeRowIds, dependencyCycles.activeCycleIds, findingReviewRows],
+  );
+  // A finding section cut to its display limit cannot say a row past the cut is gone.
+  const limitedReviewPrefixes = useMemo(
+    () =>
+      new Set(
+        (Object.keys(meaningGapResult.findingRows) as MeaningFindingGapKind[]).filter(
+          (kind) =>
+            meaningGapResult.counts.findings[kind] > meaningGapResult.findingRows[kind].length,
+        ),
+      ),
+    [meaningGapResult.findingRows, meaningGapResult.counts.findings],
   );
   const titleByReviewId = useMemo(() => {
     const titles = new Map<string, string>();
     for (const row of doNextQueue.rows) titles.set(row.id, row.title);
+    for (const row of findingReviewRows) titles.set(row.id, row.title);
     for (const cycle of dependencyCycles.cycles) {
       const firstNodeId = cycle.nodeIds[0];
       titles.set(
@@ -976,7 +994,7 @@ export function OntologyInsightsPage() {
       );
     }
     return titles;
-  }, [doNextQueue.rows, dependencyCycles.cycles, nodeById]);
+  }, [doNextQueue.rows, dependencyCycles.cycles, nodeById, findingReviewRows]);
   const reviewAuthoritative =
     dataSourceMode === "local"
       ? vault.status === "loaded"
@@ -989,6 +1007,7 @@ export function OntologyInsightsPage() {
         activeReviewIds,
         titleByReviewId,
         cycleInventoryLimited: dependencyCycles.limited,
+        limitedPrefixes: limitedReviewPrefixes,
       }),
     [
       reviewId,
@@ -996,6 +1015,7 @@ export function OntologyInsightsPage() {
       activeReviewIds,
       titleByReviewId,
       dependencyCycles.limited,
+      limitedReviewPrefixes,
     ],
   );
   const onReviewStart = useCallback(
@@ -1030,6 +1050,11 @@ export function OntologyInsightsPage() {
   const queueSectionTotals = useMemo<Record<QueueSectionKey, number>>(
     () => ({
       "missing-definition": meaningGapResult.counts.missingDefinition,
+      "missing-boundary": meaningGapResult.counts.findings["missing-boundary"],
+      "missing-uncertainty": meaningGapResult.counts.findings["missing-uncertainty"],
+      "epistemic-exclusion": meaningGapResult.counts.findings["epistemic-exclusion"],
+      "slug-outside-kind-folder":
+        meaningGapResult.counts.findings["slug-outside-kind-folder"],
       "missing-domain": meaningGapResult.counts.missingDomain,
       duplicate: duplicates.suspectCount,
       promotion: doNextQueue.counts.promotion,
@@ -1222,6 +1247,9 @@ export function OntologyInsightsPage() {
     whyDuplicate: (percent: number) => t("doNext.whyDuplicate", { percent }),
     whyMissingDefinition: t("doNext.whyMissingDefinition"),
     whyMissingDomain: t("doNext.whyMissingDomain"),
+    // Keyed the same way `groupName` is, so a finding's name and its sentence are added
+    // together or not at all.
+    whyMeaningFinding: (group: DoNextGroupKey) => t(`doNext.whyFinding.${group}`),
     whyIsland: t("doNext.whyIsland"),
     whyContainment: t("doNext.whyContainment"),
     whyBlockedDocument: (reason: string) => t("doNext.whyBlockedDocument", { reason }),
@@ -1619,6 +1647,7 @@ export function OntologyInsightsPage() {
                 meaningGaps={{
                   definitionRows: meaningGapResult.definitionRows,
                   domainRows: meaningGapResult.domainRows,
+                  findingRows: meaningGapResult.findingRows,
                   domainChoices,
                   onWrite: writeMeaningGap,
                   definitionLabels: meaningGapDefinitionLabels,

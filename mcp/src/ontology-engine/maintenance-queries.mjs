@@ -4,6 +4,7 @@ import {
   boundaryFindings,
   definitionFinding,
   epistemicExclusionFinding,
+  starterExampleFindings,
   uncertaintyFinding,
 } from '../meaning-findings.mjs';
 import { slugOutsideKindFolderMessage } from '../construction-rules.mjs';
@@ -15,6 +16,7 @@ const MEANING_GAP_KIND_BY_CODE = Object.freeze({
   'folder-only-evidence': 'folder_only_evidence',
   'slug-outside-kind-folder': 'slug_outside_kind_folder',
   'uncertainty-missing': 'uncertainty_missing',
+  'starter-example-node': 'retire_starter_example',
 });
 const MEANING_GAP_SCORE_BY_CODE = Object.freeze({
   'definition-missing': 0.6,
@@ -23,6 +25,13 @@ const MEANING_GAP_SCORE_BY_CODE = Object.freeze({
   'folder-only-evidence': 0.5,
   'slug-outside-kind-folder': 0.35,
   'uncertainty-missing': 0.55,
+  // Second highest, and the reasoning is the same as `epistemic-exclusion`'s:
+  // both put a claim on the map that is simply not true of the codebase. This
+  // one is worse in reach — a reader sees «Example domain» beside the real
+  // domains before opening anything — and better in cost, because the repair is
+  // one delete rather than a sentence only the author can write. Ranked just
+  // under the exclusion, which a source-hidden reader repeats as fact.
+  'starter-example-node': 0.65,
 });
 
 export function createMaintenanceQueries({
@@ -92,6 +101,33 @@ export function createMaintenanceQueries({
       });
     }
     return { ...limitedCandidateGroup(rows, limit), keys: rows.map((row) => `${row.kind}\0${row.slug}`) };
+  }
+
+  /**
+   * `init` starter examples the vault has outgrown.
+   *
+   * Beside `slugOutsideKindFolderCandidates` because it shares that function's
+   * one useful property: it needs nothing the compiled artifact does not already
+   * carry — a slug, a kind and a title — so it answers on every
+   * `maintenance_plan` call, bodies or no bodies. That is the whole point here.
+   * The vault measured on 2026-09-22 was freshly built by an agent through the
+   * first-run door; nobody had compiled it with bodies loaded, and it is exactly
+   * the vault that needed telling.
+   */
+  function starterExampleCandidates(limit) {
+    const rows = starterExampleFindings(
+      [...nodes].sort((a, b) => String(a.slug).localeCompare(String(b.slug))),
+    ).map((finding) => ({
+      kind: 'retire_starter_example',
+      score: MEANING_GAP_SCORE_BY_CODE['starter-example-node'],
+      slug: finding.slug,
+      reason: finding.message,
+      node: summarizeNode(nodeBySlug.get(finding.slug)),
+    }));
+    return {
+      ...limitedCandidateGroup(rows, limit),
+      keys: rows.map((row) => `${row.kind}\0${row.slug}`),
+    };
   }
 
   function nodeEligibilityActions() {
@@ -164,6 +200,7 @@ export function createMaintenanceQueries({
     const capabilitiesWithoutEvidence = capabilityWithoutEvidenceCandidates(limit);
     const meaningGaps = meaningGapCandidates(limit);
     const flatSlugs = slugOutsideKindFolderCandidates(limit);
+    const starterExamples = starterExampleCandidates(limit);
     const canonicalizationActions = Array.isArray(artifact?.canonicalizationActions)
       ? artifact.canonicalizationActions
       : [];
@@ -280,7 +317,7 @@ export function createMaintenanceQueries({
         node: row.node,
       });
     }
-    for (const row of [...meaningGaps.rows, ...flatSlugs.rows]) {
+    for (const row of [...meaningGaps.rows, ...flatSlugs.rows, ...starterExamples.rows]) {
       actions.push({ phase: 'review', kind: row.kind, severity: 'info', score: row.score, reason: row.reason, node: row.node });
     }
 
@@ -289,7 +326,11 @@ export function createMaintenanceQueries({
     // rows makes the queue generate its own noise, so whatever the full scan
     // already said is dropped here.
     const capabilitiesWithoutEvidenceSlugs = new Set(capabilitiesWithoutEvidence.slugs ?? []);
-    const meaningGapKeys = new Set([...(meaningGaps.keys ?? []), ...(flatSlugs.keys ?? [])]);
+    const meaningGapKeys = new Set([
+      ...(meaningGaps.keys ?? []),
+      ...(flatSlugs.keys ?? []),
+      ...(starterExamples.keys ?? []),
+    ]);
     for (const action of nodeEligibilityActions()) {
       if (
         action.kind === 'capability_without_evidence' &&

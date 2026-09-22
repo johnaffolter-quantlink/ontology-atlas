@@ -13,7 +13,11 @@ import type { DoNextQueue, DoNextRow } from "../../lib/do-next-queue";
 import type { DependencyCycle, DependencyCyclesResult } from "../../lib/dependency-cycles";
 import type { DuplicatePairRow } from "../../lib/duplicate-pairs";
 import type { DoNextReviewState } from "../../lib/review-loop";
-import type { DomainChoice, MeaningGapRow } from "../../lib/meaning-gap-rows";
+import type {
+  DomainChoice,
+  MeaningFindingRows,
+  MeaningGapRow,
+} from "../../lib/meaning-gap-rows";
 import type { BlockedDocumentRow } from "../../lib/fix-list";
 import {
   doNextGroupOrder,
@@ -101,6 +105,15 @@ export interface DoNextTabLabels extends FixRowLabels {
   whyDuplicate: (percent: number) => string;
   whyMissingDefinition: string;
   whyMissingDomain: string;
+  /**
+   * One sentence per meaning-finding group, looked up by key the way `groupName` is.
+   *
+   * Written as a function rather than four fields because these four say what the
+   * validator already says to the agent — a fifth finding gains a row and a sentence by
+   * adding one message key, and the screen cannot end up with a row whose reason is
+   * silence.
+   */
+  whyMeaningFinding: (group: DoNextGroupKey) => string;
   whyIsland: string;
   whyContainment: string;
   whyBlockedDocument: (reason: string) => string;
@@ -211,6 +224,11 @@ export interface DoNextTabProps {
   meaningGaps?: {
     definitionRows: MeaningGapRow[];
     domainRows: MeaningGapRow[];
+    /**
+     * The four advisory findings — what a body does not say and where a file sits.
+     * One row per node, already truncated to the display limit.
+     */
+    findingRows: MeaningFindingRows;
     domainChoices: DomainChoice[];
     onWrite: (row: MeaningGapRow, value: string) => Promise<void>;
     definitionLabels: MeaningGapLabels;
@@ -472,6 +490,51 @@ export function DoNextTab({
             labels={definition ? meaningGaps.definitionLabels : meaningGaps.domainLabels}
           />,
         ];
+      }
+
+      case "missing-boundary":
+      case "missing-uncertainty":
+      case "epistemic-exclusion":
+      case "slug-outside-kind-folder": {
+        /*
+         * What `validate_vault` already tells the agent about this body, said to the person
+         * in the same list. There is no write form: none of these four closes by typing into
+         * one frontmatter key — a boundary and an uncertainty are prose, and a slug in the
+         * wrong folder is a file that moves — so the row names the node and opens it.
+         */
+        if (!meaningGaps) return [];
+        const sentence = labels.whyMeaningFinding(group);
+        return meaningGaps.findingRows[group].map((row) => {
+          /*
+           * The same claim-before-leaving contract as an orphan row: the visible chips
+           * carry the review id and write it to this board's address, and the row menu
+           * hands the node and the validator's own sentence to an agent. Without it the
+           * first group on a fresh vault stranded the reader on the way back (CI sample
+           * vault, 2026-09-23).
+           */
+          const candidate = { id: row.id, title: row.title };
+          return (
+            <FixRow
+              key={row.id}
+              kind={group}
+              active={isActive(row.id)}
+              rowRef={(element) => registerReviewRow(row.id, element)}
+              glyph={<OntologyMapKindGlyph kind={row.nodeKind} size={13} />}
+              title={row.title}
+              sentence={sentence}
+              actions={
+                <FixRowActions
+                  labels={labels}
+                  fixHref={builderHref(row.nodeId, row.id)}
+                  viewHref={mapHref(row.nodeId, row.id)}
+                  viewLabel={labels.viewOnMap}
+                  onLeaveRow={() => onReviewStart?.(candidate)}
+                  menu={rowMenu(candidate, row.nodeId, `${row.ownSlug}: ${sentence}`, row.id)}
+                />
+              }
+            />
+          );
+        });
       }
 
       case "duplicate":

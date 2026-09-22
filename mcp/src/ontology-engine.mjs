@@ -277,6 +277,15 @@ export const MAINTENANCE_KIND_VALUES = Object.freeze([
   'folder_only_evidence',
   'slug_outside_kind_folder',
   'uncertainty_missing',
+  // An `init` starter example still standing beside real nodes (2026-09-22).
+  // Measured on two unfamiliar repositories: both builders wrote a real map and
+  // left all three scaffold examples in the finished vault, connected only to
+  // each other, with "Example domain" rendering on the map. `review` / `info`
+  // and not executable — the repair deletes somebody's file, and a queue that
+  // hands over a ready-made delete of three nodes is the one kind of row a
+  // person must read before running. Unlike every other meaning kind it needs
+  // no bodies and no repository root, so it answers on every call.
+  'retire_starter_example',
 ]);
 const MAINTENANCE_PHASES = new Set(MAINTENANCE_PHASE_VALUES);
 const MAINTENANCE_SEVERITIES = new Set(MAINTENANCE_SEVERITY_VALUES);

@@ -1,5 +1,6 @@
 import { hasCapabilityImplementationEvidence } from '../capability-evidence.mjs';
 import { refMatchesOntologyAtlasIgnore } from '../ontology-atlas-ignore.mjs';
+import { extractUncertaintyReads, orderUncertaintyReads } from '../uncertainty-reads.mjs';
 import {
   edgeSortKey,
   formatPathEdge,
@@ -817,6 +818,52 @@ export function createScopeQueries({
     };
   }
 
+  /**
+   * The reads this vault's own uncertainty asks for.
+   *
+   * Every node here records what its author did not open, did not finish, or
+   * took on somebody else's word. Until this group existed that record was
+   * where the loop stopped: the product asked for the admission, stored it as
+   * prose, and then had nothing that turned it back into a next step. This
+   * reads those lines and hands each one back as a read with an address.
+   *
+   * ## Why it says `no_bodies` instead of nothing
+   *
+   * A compiled artifact carries no bodies, and `growth_plan` was until now a
+   * pure snapshot read. An empty group would be indistinguishable from a vault
+   * whose every unknown is settled — the most flattering possible lie a queue
+   * can tell. `meaningGapCandidates` on the maintenance path accepts the same
+   * degradation and states it the same way; this names it in the response so a
+   * caller can tell "nothing to read" from "nothing was handed to me".
+   */
+  function nextReadCandidates(limit) {
+    const docsWithBodies = nodes
+      .map((node) => ({ node, doc: sourceDocBySlug.get(node.slug) }))
+      .filter((entry) => typeof entry.doc?.body === 'string');
+    if (docsWithBodies.length === 0) {
+      return { total: 0, limited: false, rows: [], reason: 'no_bodies' };
+    }
+    const rows = [];
+    for (const { node, doc } of docsWithBodies) {
+      rows.push(
+        ...extractUncertaintyReads({
+          slug: node.slug,
+          kind: node.kind,
+          title: node.title,
+          path: typeof node.path === 'string' ? node.path : null,
+          body: doc.body,
+        }),
+      );
+    }
+    const ordered = orderUncertaintyReads(rows);
+    return {
+      total: ordered.length,
+      limited: ordered.length > limit,
+      rows: ordered.slice(0, limit),
+      reason: null,
+    };
+  }
+
   function growthPlan(options = {}) {
     const limit = normalizeLimit(options.limit, 25);
     const relationRecommendations = recommendRelations({ limit });
@@ -824,6 +871,7 @@ export function createScopeQueries({
     const danglingReferences = danglingReferenceCandidates(limit);
     const unassignedNodes = unassignedNodeCandidates(limit);
     const emptyDomains = emptyDomainCandidates(limit);
+    const nextReads = nextReadCandidates(limit);
 
     return {
       operation: 'growth_plan',
@@ -834,6 +882,11 @@ export function createScopeQueries({
         danglingReferences: danglingReferences.total,
         unassignedNodes: unassignedNodes.total,
         emptyDomains: emptyDomains.total,
+        nextReads: nextReads.total,
+        // Deliberately unchanged. `totalActions` counts what a writer would
+        // change in the vault; a next read changes the reader first, and
+        // folding it in here would inflate the one number other surfaces
+        // already treat as "writes waiting".
         totalActions:
           relationRecommendations.totalRecommendations +
           externalElementRefs.total +
@@ -844,6 +897,7 @@ export function createScopeQueries({
       danglingReferences,
       unassignedNodes,
       emptyDomains,
+      nextReads,
     };
   }
 
