@@ -84,7 +84,7 @@ work here, and where it can.
 | Read / edit / create nodes in that folder | ✅ | ✅ | same parser, same schema, same files |
 | Remember the folder between visits | ❌ pick it again | ✅ | web keeps an FSA handle in its own IndexedDB; a convenience cache, not the source of truth |
 | Resume a single folder on launch | ❌ the browser needs a click for permission, and the chooser says so | ✅ opens it directly | File System Access permission has to come from a gesture, so the web presses something either way |
-| Choose between known folders on launch | ✅ | ✅ | two or more known folders open a fixed chooser with Open folder and Create new above an internally scrolling list; names wrap and paths keep their full value on hover; unavailable rows retain recovery/removal actions; constrained height or larger text folds optional guidance into an accessible help dialog so the list stays usable; one folder resumes directly |
+| Choose between known folders on launch | ✅ | ✅ | two or more known folders open a centered, content-sized chooser with Open folder and Create new beside the list heading; the list grows with its contents and scrolls internally only when space runs out; names wrap and paths keep their full value on hover; unavailable rows retain recovery/removal actions; constrained height or larger text folds optional guidance into an accessible help dialog so the list stays usable; one folder resumes directly |
 | See which folder is open, and leave it | ✅ | ✅ | the folder's name sits at the top of the rail on every destination and opens the switcher; each row carries the folder's contents, its last opening, and whether it opens now |
 | Map entry feedback | ✅ | ✅ | sidebar and G M map entry show a live preparation scene before navigation; the first canvas draw releases it, and another destination or the return action can cancel the pending entry |
 | Work offline | ❌ | ✅ | |
@@ -615,6 +615,10 @@ had become false).
   does not temporarily switch current vault to sample graph; independent consumers only
   use `/topology?mode=focus&p=…` fallback. Heartbeat/tool input reveals current vault's
   actual slug only then drawing the existing amber agent-focus ring.
+- Changed agent phase and target labels crossfade in place while their controls retain focus.
+  Elapsed time updates separately without replaying the transition. The current-work body
+  scrolls within its viewport cap. Map inspectors use the large-surface fade, keeping the
+  reading surface stationary while the camera approaches the selected concept.
 - App ontology write allow/deny and final state remain in the vault as limited work receipts in
   `.ontology-atlas/acp-work.jsonl`. Full conversation/thought/
   tool output/absolute paths are not saved. Recent receipts can be viewed collapsed in the activity popover,
@@ -622,6 +626,14 @@ had become false).
 - `created_by` is queryable provenance data but not review status. Thus
   there is no human authorship INDEX lens or red review ring. `vault-readme` is read as Docs reader guide
   but excluded from topology adapter, INDEX, canonical concept census, editor target.
+
+#### Companion home and personal memories
+
+- The launch chooser contains a compact home for the existing pixel companion. Its journal is also available beside the map's work-status controls; the mascot no longer travels over the map's reading area.
+- A person explicitly writes a short memory as checked, corrected, or still unsure, and chooses a book, plant, or star for the home. All kinds and keepsakes are available equally; no approval, node count, streak, or automatic agent activity advances it.
+- These are self-authored personal reflections, not review receipts, accepted meaning, or an ontology quality score. The journal records the current folder name only when a real folder is loaded; it does not attach inferred evidence or mark any ontology fact reviewed.
+- Up to 50 memories stay in versioned device-local storage, separate from vault Markdown. A full journal never silently evicts an older memory. Individual removal and an explicit reset are available; clearing app/browser data removes the journal. Save failures keep the draft, and unreadable storage is preserved until explicit reset.
+- Saving a memory produces one finite sprite response. Existing verified agent read/completion poses stay independent, beside work status. Reduced motion uses the existing static sprite equivalent.
 
 #### Locale-specific Node Names (`display_<locale>`, 2026-07-24)
 - A feature to assign different names per language to a single node. The map labels, INDEX, and popovers draw names from `display_ko` / `display_en` in frontmatter according to the screen language. If no name for that language exists, it searches down the order: `display_<screen language>` → `display` → `title`. Search and name comparison always use the full `title` — attaching a label does not narrow the search scope.
