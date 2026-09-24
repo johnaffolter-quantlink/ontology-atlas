@@ -38,8 +38,8 @@ calls, dynamic dispatch, or impact; `.claude/rules/codegraph.md` owns its use.
 Empty or stale results are not absence. Do not create an index to start a task.
 
 Install only missing/stale dependencies: `pnpm install` at the root and
-`pnpm --dir mcp install --frozen-lockfile` for the source MCP. Root installation
-does not update `mcp/node_modules`; recheck it after its manifest changes.
+`pnpm --dir mcp install --frozen-lockfile` for the source MCP. Root `prepare`
+runs it when missing or stale (warns, never fails); recheck after manifest changes.
 Use `pnpm dev` when the task needs a running web app.
 
 Run `pnpm checks:changed -- --run` and complete every recommendation. Stop after

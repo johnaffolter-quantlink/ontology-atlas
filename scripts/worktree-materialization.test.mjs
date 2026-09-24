@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
-import { prepareWorktree } from './prepare-worktree.mjs';
+import { prepareMcpDependencies, prepareWorktree } from './prepare-worktree.mjs';
 
 const SOURCE = new URL('..', import.meta.url).pathname;
 const PREPARE = JSON.parse(readFileSync(join(SOURCE, 'package.json'), 'utf8')).scripts.prepare;
@@ -28,6 +28,7 @@ function seed(root) {
     'scripts/lib/parse-frontmatter.mjs', 'scripts/lib/record-ledgers.mjs',
     'scripts/lib/po-pilot-records.mjs', 'scripts/lib/po-pilot.mjs',
     'scripts/lib/po-risk-router.mjs', 'scripts/lib/decision-record-template.mjs',
+    'cli/src/lib/mcp-module.mjs',
   ]) copy(root, path);
   for (const path of ['.githooks/post-checkout', '.githooks/post-merge']) copy(root, path);
   put(root, '.gitignore', '/src/entities/docs-vault/data/\n/public/docs-vault/\n');
@@ -70,6 +71,28 @@ test('prepare configures Git when present, propagates config failure, and builds
   };
   assert.equal(prepareWorktree({ root: '/tmp/archive', spawn: archiveSpawn }), 0);
   assert.deepEqual(calls.at(-1), [process.execPath, ['scripts/build-docs-vault.mjs']]);
+});
+
+test('prepare installs locked MCP dependencies only when they are missing, and never fails on it', () => {
+  const calls = [];
+  const spawn = (command, args, options) => { calls.push([command, args, options.cwd]); return { status: 0 }; };
+  const env = { npm_execpath: '/pnpm/bin/pnpm.cjs' };
+
+  assert.equal(prepareMcpDependencies({ root: '/tmp/repo', spawn, env, missing: () => [] }), 0);
+  assert.deepEqual(calls, []);
+
+  assert.equal(prepareMcpDependencies({ root: '/tmp/repo', spawn, env, missing: () => ['@modelcontextprotocol/server'] }), 0);
+  assert.deepEqual(calls, [[process.execPath, ['/pnpm/bin/pnpm.cjs', '--dir', 'mcp', 'install', '--frozen-lockfile'], '/tmp/repo']]);
+
+  let written = '';
+  const failed = prepareMcpDependencies({
+    root: '/tmp/repo', env: {}, missing: () => ['@modelcontextprotocol/core'],
+    spawn: (command) => { calls.push([command]); return { status: 1 }; },
+    stderr: { write: (text) => { written += text; } },
+  });
+  assert.equal(failed, 0);
+  assert.deepEqual(calls.at(-1), ['pnpm']);
+  assert.match(written, /@modelcontextprotocol\/core.*pnpm --dir mcp install --frozen-lockfile/);
 });
 
 test('parallel worktrees merge immutable records and every checkout materializes ignored outputs', () => {

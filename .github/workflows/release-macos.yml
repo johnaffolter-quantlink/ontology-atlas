@@ -189,8 +189,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # `mcp/` is not a pnpm workspace member and uses its own `node_modules`
-      # (remnant of packages previously published separately to npm). Root install does not install it,
-      # so it exists only on human machines, not runners — `v1.0.0-rc.2` stopped while baking the sidecar
+      # (remnant of packages previously published separately to npm). Root `prepare` now installs it
+      # when missing but only warns on failure, so this step stays to fail the release loudly — `v1.0.0-rc.2` stopped while baking the sidecar
       # because it could not find `@modelcontextprotocol/sdk`. There is exactly one pinned dependency.
       #
       # Reason for `--frozen-lockfile`: the `package-lock.json` in this folder is **npm's**,
