@@ -26,3 +26,27 @@ In Claude Code, `/plugin marketplace add <path or repo of the built marketplace>
 Writes go through the host's per-tool approval; the plugin grants no permissions in advance.
 Set `OATLAS_READ_ONLY=1` for a read-only session, or `OATLAS_WRITE_CONSENT=1` to have the server
 ask for consent itself on hosts that support it.
+
+## Other agents (Codex, Cursor, any MCP client)
+
+The launcher is a plain stdio MCP server with no dependencies beyond Node, so any client can run
+the built plugin. Started from the project directory, it finds the vault from the working
+directory; `ATLAS_PROJECT_DIR` or `OATLAS_VAULT` override that. Use the absolute path of the built
+`launch.mjs`.
+
+Codex, `.codex/config.toml` in the project:
+
+```toml
+[mcp_servers.ontology-atlas]
+command = "node"
+args = ["/abs/path/to/atlas-plugin/plugins/ontology-atlas/launch.mjs"]
+```
+
+Cursor, `.cursor/mcp.json` in the project:
+
+```json
+{ "mcpServers": { "ontology-atlas": { "command": "node", "args": ["/abs/path/to/atlas-plugin/plugins/ontology-atlas/launch.mjs"] } } }
+```
+
+The two skills are plain `SKILL.md` files: copy `skills/atlas-orient` and `skills/atlas-sync` into
+the agent's own skills folder (Codex reads `.agents/skills/`) to bring the same working rules.
