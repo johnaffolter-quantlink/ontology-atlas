@@ -99,6 +99,7 @@ publishing plan is retired (`docs/DECISIONS.md`, 2026-07-27), so there is no
 | **App-bundled** (primary) | anyone on macOS or Windows | nothing — the download carries a compiled copy of this server |
 | **Source checkout** | Linux, contributors, anyone who wants the CLI too | Node 24 and pnpm ([setup](../cli/README.md#set-up-from-a-source-checkout)) |
 | **MCPB bundle** | a host that installs `.mcpb` files in one click | the bundle from the [latest release](https://github.com/wlsdks/ontology-atlas/releases); it asks for your vault folder |
+| **Claude Code plugin** | an agent session in any repository | `pnpm plugin:build`, then `claude --plugin-dir .tmp/atlas-plugin/plugins/ontology-atlas` or `/plugin marketplace add` the built folder; Node on the host |
 | **Container image** | a client that would rather run a container | `docker run --rm -i --user "$(id -u):$(id -g)" -v /path/to/atlas:/vault ghcr.io/wlsdks/ontology-atlas-mcp` |
 
 The last two exist so the server is discoverable in the MCP ecosystem without a
@@ -118,6 +119,20 @@ already listed, since the registry treats a version as immutable. It was a separ
 is published with `GITHUB_TOKEN`, and GitHub starts no workflow from an event that
 token raised. `workflow_dispatch` remains, for re-listing a release that is already
 out.
+
+The Claude Code plugin (`plugins/ontology-atlas/`) carries this server into any
+project's agent sessions together with two skills, `atlas-orient` (read the vault before
+work) and `atlas-sync` (propose updates after a change; write only what the person
+approves, with dry-runs before rename, merge or delete). Its launcher finds the vault at
+`OATLAS_VAULT`, `<project>/atlas` or `<project>/docs/ontology`, always as an absolute
+path; in a project with none it serves a single `atlas_status` tool that says where it
+looked, instead of exiting and leaving the agent with no tools and no reason. The server
+inside is unpacked from the boot-verified MCPB, so only the plugin's own files are in
+Git. `pnpm plugin:build` proves three things before it finishes: `claude plugin
+validate` accepts the plugin and its marketplace, a project without a vault gets
+`atlas_status`, and a project whose vault is `./atlas` gets the full server reporting
+that vault's absolute path while started from another directory. It grants no
+permissions in advance; writes stay behind the host's per-tool approval.
 
 Third-party directories list it from the same two facts. [Glama](https://glama.ai/mcp/servers/wlsdks/ontology-atlas)
 builds the server from `mcp/Dockerfile` and introspects the running process for

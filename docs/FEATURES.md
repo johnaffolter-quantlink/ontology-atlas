@@ -2655,12 +2655,13 @@ and the panel says so with somewhere to go.
 
 ## 3. MCP server (current runtime inventory)
 
-AI agents read/write the same vault as humans. Two ways to get the server running, and only two:
+AI agents read/write the same vault as humans. The ways to get the server running (the MCPB bundle and container image that list it in MCP registries are described in `mcp/README.md`):
 
 | Channel | How the agent starts it | What the user does |
 |---|---|---|
 | **Installed desktop app** (primary; macOS 2026-07-27, Windows beta 2026-08-01) | The app ships a compiled MCP server inside its own bundle (`Ontology Atlas.app/Contents/MacOS/ontology-atlas-mcp` on macOS, `ontology-atlas-mcp.exe` beside the Windows executable). The agent client spawns that binary directly, so it keeps serving while the app is closed. | Open the vault folder in the app and press **Connect agent**. The app writes `.mcp.json` / `.codex/config.toml` with the bundled binary's absolute path and the vault's real path already filled in — no terminal, no Node, no install step. |
 | **Source checkout** (fallback) | `node <checkout>/mcp/src/index.js` with `OATLAS_VAULT` set. | Clone the repo, then either paste the config or let `node <checkout>/cli/src/index.mjs init` / `agent-setup --write` write it. |
+| **Claude Code plugin** (2026-09-24) | The plugin's launcher (`plugins/ontology-atlas/launch.mjs`) resolves the project's vault (`OATLAS_VAULT`, `<project>/atlas`, `<project>/docs/ontology`) to an absolute path and starts the server unpacked from the verified MCPB; with no vault it serves one `atlas_status` tool that names where it looked. The plugin adds no screen; it also carries the `atlas-orient` and `atlas-sync` skills. | `pnpm plugin:build`, then `claude --plugin-dir .tmp/atlas-plugin/plugins/ontology-atlas` or `/plugin marketplace add` the built folder. Writes stay behind the host's per-tool approval. |
 
 npm publishing is retired (`docs/DECISIONS.md`, 2026-07-27) — there is no `npx` channel.
 

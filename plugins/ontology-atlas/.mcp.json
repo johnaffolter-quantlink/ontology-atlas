@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ontology-atlas": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/launch.mjs"],
+      "env": {
+        "ATLAS_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}",
+        "OATLAS_VAULT": "${OATLAS_VAULT:-}"
+      }
+    }
+  }
+}

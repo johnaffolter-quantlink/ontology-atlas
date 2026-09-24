@@ -83,6 +83,13 @@ const RULES = [
     matches: [/^\.mcp\.json(?:\.example)?$/, /^\.codex\/config\.toml$/],
   },
   {
+    // The plugin carries the server into other repositories' sessions: its launcher picks the
+    // vault, so a change here can point every installed session at the wrong folder.
+    command: 'pnpm test:plugin',
+    reason: 'the Claude Code plugin changed — launcher vault resolution, manifest, skills, or its build',
+    matches: [/^plugins\/ontology-atlas\//, /^scripts\/(?:build-atlas-plugin|atlas-plugin\.test)\.mjs$/],
+  },
+  {
     // The ecosystem channel is two artifacts and one metadata entry, and the
     // pieces verify each other: the image's ownership label must repeat the
     // registry name, and the release must upload the exact artifact name the

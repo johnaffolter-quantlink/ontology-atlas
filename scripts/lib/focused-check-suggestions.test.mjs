@@ -971,6 +971,17 @@ describe('focused check suggestions', () => {
     }
   });
 
+  it('suggests the plugin tests when the Claude Code plugin changes', () => {
+    for (const file of [
+      'plugins/ontology-atlas/launch.mjs',
+      'plugins/ontology-atlas/skills/atlas-sync/SKILL.md',
+      'scripts/build-atlas-plugin.mjs',
+      'scripts/atlas-plugin.test.mjs',
+    ]) {
+      assert.ok(domainCommands(suggestFocusedChecks([file])).includes('pnpm test:plugin'), file);
+    }
+  });
+
   it('suggests docs and package contracts for GitHub quality-gate files', () => {
     const result = suggestFocusedChecks([
       '.github/workflows/release-macos.yml',

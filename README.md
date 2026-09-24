@@ -636,6 +636,10 @@ and `mcp-verify` to prove the live connection. The exact commands, the two
 required installs, and the reason `init` refuses to run inside the Atlas clone
 are in [set up from a source checkout](cli/README.md#set-up-from-a-source-checkout).
 
+To carry Atlas into agent sessions in any repository, `pnpm plugin:build` builds a Claude Code
+plugin (the MCP server plus read-before-work and propose-after-change skills) and a marketplace
+for it under `.tmp/atlas-plugin`; see the [MCP README](mcp/README.md) for how it finds a vault.
+
 ## Documentation
 
 **Use it:** [hosted guide](https://ontologyatlas.com/en/guide/) ·
