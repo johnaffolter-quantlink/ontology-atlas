@@ -1,0 +1,1352 @@
+<meta charset="utf-8">
+<title>Atlas Current</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  /* Single deliberate look: graphite instrument, indigo current, paper for documents. */
+  :root {
+    color-scheme: dark;
+    --ground: #0a0a0a;
+    --panel: #111111;
+    --raised: #191919;
+    --line: #1f1f1f;
+    --line-2: #2c2c2c;
+    --t1: #fafafa;
+    --t2: #d4d4d4;
+    --t3: #8f8f8f;
+    --t4: #5e5e5e;
+    --current: #e8e8e8;
+    --current-hot: #ffffff;
+    --current-a: rgba(255, 255, 255, 0.12);
+    --touched: #e8e6d9;
+    --paper: #f5f5f2;
+    --ink: #1c1d20;
+    --ink-2: #555861;
+    --ink-rule: #dcdcd6;
+    --ink-accent: #1c1d20;
+    /* kinds of work, read from each commit's conventional prefix */
+    --w-build: #fafafa;
+    --w-repair: #bdbdbd;
+    --w-plan: #8f8f8f;
+    --w-tend: #5e5e5e;
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Source Serif 4", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  }
+  :root[data-theme="light"], :root[data-theme="dark"] { color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ground); color: var(--t2); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--current); outline-offset: 2px; }
+  .mono { font-family: var(--mono); }
+
+  .app { position: relative; height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
+
+  /* ---------- top bar ---------- */
+  .bar { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; padding-block: 12px; padding-inline: 16px; border-bottom: 1px solid var(--line); background: var(--ground); position: relative; z-index: 3; }
+  .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .brand h1 { margin: 0; font-size: 15px; font-weight: 600; color: var(--t1); letter-spacing: -0.01em; }
+  .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--t4); letter-spacing: 0.04em; white-space: nowrap; }
+  .find { margin-left: auto; position: relative; }
+  .find input { width: 240px; max-width: 52vw; background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 10px 6px 28px; font-size: 13px; }
+  .find input::placeholder { color: var(--t4); }
+  .find svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; stroke: var(--t3); }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--t3); font-family: var(--mono); letter-spacing: 0.02em; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .legend i { display: inline-block; width: 14px; height: 2px; background: var(--t4); border-radius: 1px; }
+  .legend i.dep { background: var(--current); }
+  .legend i.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--current-hot); box-shadow: 0 0 8px 2px var(--current); }
+
+  /* ---------- stage ---------- */
+  .stage { position: relative; overflow: hidden; background: radial-gradient(120% 95% at 50% 42%, #121212 0%, #0c0c0c 58%, var(--ground) 100%); touch-action: none; }
+  .stage canvas#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  .stage canvas#map.dragging { cursor: grabbing; }
+  .stage canvas#map.over { cursor: pointer; }
+  .hint { position: absolute; left: 16px; bottom: 12px; font-family: var(--mono); font-size: 11px; color: var(--t4); pointer-events: none; letter-spacing: 0.02em; }
+
+  /* ---------- node popover ---------- */
+  .pop { position: absolute; z-index: 4; width: 384px; max-width: calc(100% - 32px); background: rgba(15, 16, 17, 0.94); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px -12px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.4);
+    transform-origin: var(--ox, 0) var(--oy, 0); animation: pop-in 220ms cubic-bezier(.2,.9,.25,1.05); }
+  @keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+  .pop header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .kind { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); }
+  .kind b { width: 7px; height: 7px; border-radius: 50%; background: var(--t2); display: inline-block; }
+  .kind b.domain { background: transparent; border: 1.5px solid var(--t1); }
+  .kind b.element { background: var(--t3); border-radius: 1.5px; }
+  .pop h2 { margin: 4px 0 2px; font-size: 17px; font-weight: 600; color: var(--t1); letter-spacing: -0.01em; text-wrap: balance; }
+  .pop .path { font-family: var(--mono); font-size: 11px; color: var(--t3); overflow-wrap: anywhere; }
+  .pop .rev { font-size: 11.5px; color: var(--t4); margin-top: 4px; }
+  .pop .rev .mono { color: var(--t3); }
+  .close { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; border-radius: 6px; border: 0; background: transparent; color: var(--t3); cursor: pointer; display: grid; place-items: center; }
+  .close:hover { background: var(--raised); color: var(--t1); }
+
+  .tabs { display: flex; gap: 2px; padding: 8px 12px 0; }
+  .tab { border: 0; background: transparent; color: var(--t3); padding: 6px 10px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 12.5px; display: inline-flex; gap: 6px; align-items: center; border-bottom: 1.5px solid transparent; }
+  .tab:hover { color: var(--t1); }
+  .tab[aria-selected="true"] { color: var(--t1); border-bottom-color: var(--current); }
+  .tab .n { font-family: var(--mono); font-size: 10.5px; color: var(--t4); }
+  .tabbody { padding: 10px 12px 12px; }
+  .pop footer { display: flex; gap: 8px; padding: 0 12px 12px; }
+  .btn { border: 1px solid var(--line-2); background: var(--raised); color: var(--t1); border-radius: 7px; padding: 6px 11px; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .btn:hover { border-color: #3a3b42; background: #1c1d21; }
+  .btn.primary { background: var(--t1); border-color: var(--t1); color: var(--ground); font-weight: 500; }
+  .btn.primary:hover { background: #ffffff; }
+  .btn.icon { padding: 6px 8px; }
+  .btn svg { width: 13px; height: 13px; }
+  .grow { flex: 1; }
+
+  /* thumbnails: real layouts rendered at full size, then scaled into the frame */
+  .frame { position: relative; overflow: hidden; border-radius: 6px; background: #0b0c0d; }
+  .scaler { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .frame.paperframe { height: 292px; background: #d8d8d2; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3); }
+  .frame.paperframe::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: linear-gradient(to bottom, rgba(245,245,242,0), var(--paper)); pointer-events: none; }
+  .frame.slideframe { aspect-ratio: 16 / 9; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .strip { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .ctl { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--raised); color: var(--t1); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .ctl:hover { background: #1c1d21; }
+  .ctl svg { width: 12px; height: 12px; }
+  .count { font-family: var(--mono); font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dots { display: flex; gap: 4px; flex: 1; justify-content: center; flex-wrap: wrap; }
+  .dots i { width: 14px; height: 3px; border-radius: 2px; background: var(--line-2); cursor: pointer; }
+  .dots i.on { background: var(--current); }
+
+  /* video-style replay */
+  .player { position: relative; }
+  .player canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 6px; background: #0b0c0d; box-shadow: inset 0 0 0 1px var(--line-2); }
+  .scrub { position: relative; flex: 1; height: 28px; cursor: pointer; touch-action: none; }
+  .scrub .track { position: absolute; left: 0; right: 0; top: 13px; height: 3px; border-radius: 2px; background: var(--line-2); }
+  .scrub .fill { position: absolute; left: 0; top: 13px; height: 3px; border-radius: 2px; background: var(--current); }
+  .scrub .knob { position: absolute; top: 9px; width: 11px; height: 11px; margin-left: -5.5px; border-radius: 50%; background: var(--t1); box-shadow: 0 0 0 3px rgba(255,255,255,0.14); }
+  .scrub .tick { position: absolute; top: 10px; width: 1px; height: 9px; background: var(--t4); }
+  .chapter { font-size: 12px; color: var(--t2); margin-top: 6px; min-height: 18px; }
+  .chapter .mono { color: var(--t3); font-size: 11px; }
+
+  .empty { font-size: 12.5px; color: var(--t3); padding: 18px 4px; }
+
+  /* ---------- paper documents ---------- */
+  .paper { width: 640px; background: var(--paper); color: var(--ink); font-family: var(--serif); font-size: 15px; line-height: 1.58; padding: 44px 56px 52px; box-sizing: border-box; font-optical-sizing: auto; }
+  .paper .lh { display: flex; justify-content: space-between; gap: 16px; font-family: var(--sans); font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--ink); padding-bottom: 8px; }
+  .paper .lh span:last-child { font-family: var(--mono); text-transform: none; letter-spacing: 0; }
+  .paper h1 { font-family: var(--serif); font-weight: 600; font-size: 30px; line-height: 1.15; letter-spacing: -0.01em; margin: 26px 0 10px; text-wrap: balance; }
+  .paper .standfirst { font-size: 17.5px; line-height: 1.5; color: #2c2e33; margin: 0 0 18px; }
+  .paper dl.meta { display: grid; grid-template-columns: 128px 1fr; gap: 4px 14px; margin: 0 0 20px; padding: 12px 0; border-top: 1px solid var(--ink-rule); border-bottom: 1px solid var(--ink-rule); font-family: var(--sans); font-size: 11.5px; }
+  .paper dt { color: var(--ink-2); letter-spacing: 0.02em; }
+  .paper dd { margin: 0; font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; color: var(--ink); }
+  .paper h3 { font-family: var(--sans); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-accent); margin: 22px 0 6px; font-weight: 600; }
+  .paper p { margin: 0 0 10px; }
+  .paper ul { margin: 0 0 10px; padding-left: 20px; }
+  .paper li { margin: 0 0 5px; }
+  .paper li::marker { color: var(--ink-2); }
+  .paper code { font-family: var(--mono); font-size: 0.8em; background: #e9e9e3; padding: 1px 4px; border-radius: 3px; }
+  .paper .notes { margin-top: 22px; border-top: 1px solid var(--ink-rule); padding-top: 10px; font-size: 13px; color: #34363c; }
+  .paper .notes ol { padding-left: 18px; margin: 6px 0 0; }
+  .paper .notes li { margin-bottom: 8px; }
+  .paper .notes .to { font-family: var(--mono); font-size: 11px; color: var(--ink-accent); display: block; }
+  .paper .folio { margin-top: 26px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--ink-2); border-top: 1px solid var(--ink-rule); padding-top: 8px; }
+
+  /* ---------- slides (960 × 540) ---------- */
+  .slide { width: 960px; height: 540px; box-sizing: border-box; padding: 54px 64px 46px; background: radial-gradient(130% 120% at 0% 0%, #1a1a1a 0%, #121212 55%, #0d0d0d 100%); color: var(--t2); font-family: var(--sans); position: relative; display: flex; flex-direction: column; }
+  .slide .kick { font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--t3); }
+  .slide h3 { font-size: 44px; line-height: 1.08; font-weight: 600; letter-spacing: -0.025em; color: var(--t1); margin: 14px 0 16px; text-wrap: balance; max-width: 780px; }
+  .slide h3.xl { font-size: 64px; }
+  .slide p.lead { font-size: 21px; line-height: 1.45; color: var(--t2); max-width: 720px; margin: 0; }
+  .slide .stats { display: flex; gap: 48px; margin-top: auto; }
+  .slide .stat b { display: block; font-size: 40px; font-weight: 500; color: var(--t1); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .slide .stat span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
+  .slide .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 44px; flex: 1; min-height: 0; }
+  .slide ul.inc { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+  .slide ul.inc li { font-size: 18px; line-height: 1.4; color: var(--t2); padding-left: 22px; position: relative; }
+  .slide ul.inc li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 10px; height: 1.5px; background: var(--t1); }
+  .slide .side h4 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); margin: 0 0 10px; font-weight: 500; }
+  .slide .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .slide .chip { border: 1px solid var(--line-2); background: #161616; border-radius: 6px; padding: 5px 10px; font-size: 14px; color: var(--t2); }
+  .slide .chip.dep { border-style: dashed; border-color: #4a4a4a; color: var(--t1); }
+  .slide .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 8px; }
+  .slide .card { border: 1px solid var(--line-2); border-radius: 8px; padding: 14px 16px; background: rgba(255,255,255,0.015); }
+  .slide .card b { display: block; color: var(--t1); font-weight: 500; font-size: 16px; margin-bottom: 4px; }
+  .slide .card span { font-size: 13px; line-height: 1.4; color: var(--t3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .slide .foot { position: absolute; left: 64px; right: 64px; bottom: 22px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--t4); letter-spacing: 0.03em; }
+  .slide .commits { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .slide .commits li { font-size: 15px; color: var(--t2); display: grid; grid-template-columns: 92px 1fr; gap: 12px; }
+  .slide .commits li .mono { color: var(--t3); font-size: 12.5px; padding-top: 2px; }
+
+  /* ---------- history transport ---------- */
+  .transport { border-top: 1px solid var(--line); background: var(--panel); padding-block: 10px 12px; padding-inline: 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: auto 1fr auto; gap: 6px 14px; align-items: center; position: relative; z-index: 3; }
+  .transport .play { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--t1); background: var(--t1); display: grid; place-items: center; cursor: pointer; grid-row: span 2; }
+  .transport .play:hover { background: #ffffff; }
+  .transport .play svg { width: 13px; height: 13px; fill: var(--ground); }
+  .caption { display: flex; gap: 6px 12px; align-items: baseline; flex-wrap: wrap; min-width: 0; min-height: 20px; font-size: 13px; }
+  .caption .h { font-family: var(--mono); font-size: 11.5px; color: var(--t1); }
+  .caption .d { font-family: var(--mono); font-size: 11.5px; color: var(--t3); }
+  .caption .s { color: var(--t1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 260px; }
+  .caption .n { font-family: var(--mono); font-size: 11.5px; color: var(--t3); white-space: nowrap; }
+  .timeline { position: relative; height: 26px; cursor: pointer; touch-action: none; }
+  .timeline .axis { position: absolute; left: 0; right: 0; top: 12px; height: 1px; background: var(--line-2); }
+  .timeline .t { position: absolute; bottom: 8px; width: 3px; margin-left: -1.5px; border-radius: 1px; background: var(--t4); transition: background 160ms; }
+  .timeline .t.done { background: #6a6a6a; }
+  .timeline .t.cur { background: #ffffff; box-shadow: 0 0 8px 1px rgba(255,255,255,0.5); }
+  .timeline .lab { position: absolute; bottom: -5px; font-family: var(--mono); font-size: 9.5px; color: var(--t4); transform: translateX(-50%); white-space: nowrap; }
+
+
+  /* view switch, speed, work-type legend */
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; padding: 2px; background: var(--panel); gap: 2px; }
+  .seg button { border: 0; background: transparent; color: var(--t3); padding: 4px 11px; border-radius: 6px; font-size: 12.5px; cursor: pointer; }
+  .seg button:hover { color: var(--t1); }
+  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--t1); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .speed { grid-row: span 2; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .speed .seg button { font-family: var(--mono); font-size: 11px; padding: 3px 8px; }
+  .speed small { font-family: var(--mono); font-size: 10px; color: var(--t4); letter-spacing: 0.04em; }
+  .types { position: absolute; right: 16px; top: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-family: var(--mono); font-size: 11px; color: var(--t3); pointer-events: none; }
+  .types span { display: inline-flex; align-items: center; gap: 6px; }
+  .types i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .caption .ty { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; }
+  .caption .gap { font-family: var(--mono); font-size: 11px; color: var(--t4); white-space: nowrap; }
+
+  /* ---------- stage toolrow: navigation, lens, filters ---------- */
+  .toolrow { position: absolute; left: 12px; right: 12px; top: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; pointer-events: none; z-index: 3; }
+  .toolrow > * { pointer-events: auto; }
+  .stage.has-drawer .toolrow { left: 356px; }
+  .stage.has-drawer .hint { left: 360px; }
+  @media (max-width: 640px) { .stage.has-drawer .toolrow, .stage.has-drawer .hint { left: 12px; } }
+  .navc { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+  .iconbtn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line-2); background: rgba(17,17,17,0.88); color: var(--t2); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .iconbtn:hover:not(:disabled) { color: var(--t1); border-color: #3c3c3c; }
+  .iconbtn:disabled { opacity: 0.35; cursor: default; }
+  .iconbtn svg { width: 12px; height: 12px; }
+  .crumbs { display: flex; gap: 0; align-items: center; font-size: 12px; min-width: 0; }
+  .crumbs button { border: 0; background: transparent; color: var(--t3); padding: 3px 6px; border-radius: 5px; cursor: pointer; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .crumbs button:hover { color: var(--t1); background: var(--raised); }
+  .crumbs button[aria-current="true"] { color: var(--t1); }
+  .crumbs .sep { color: var(--t4); font-size: 11px; }
+  .chipx { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); background: rgba(17,17,17,0.92); border-radius: 999px; padding: 3px 4px 3px 11px; font-size: 12px; color: var(--t3); max-width: 100%; }
+  .chipx b { font-weight: 500; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .chipx button { border: 0; background: var(--raised); color: var(--t2); border-radius: 999px; padding: 2px 8px; cursor: pointer; font-size: 11.5px; font-family: var(--mono); }
+  .chipx button:hover { color: var(--t1); }
+  .chipx button[aria-pressed="true"] { background: var(--t1); color: var(--ground); }
+  .rightc { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .filters { display: flex; gap: 4px; flex-wrap: wrap; }
+  .filters button { border: 1px solid var(--line-2); background: rgba(17,17,17,0.88); color: var(--t4); border-radius: 6px; padding: 4px 9px; font-size: 11.5px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+  .filters button[aria-pressed="true"] { color: var(--t1); border-color: #3c3c3c; }
+  .glyph { display: inline-block; flex: none; }
+  .glyph.dom { width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 50%; }
+  .glyph.cap { width: 7px; height: 7px; background: currentColor; border-radius: 50%; }
+  .glyph.el { width: 6px; height: 6px; background: currentColor; border-radius: 1px; }
+  .glyph.c { width: 14px; height: 0; border-top: 1px solid currentColor; }
+  .glyph.d { width: 14px; height: 0; border-top: 1px dashed currentColor; }
+  .types { position: static; }
+  .mini { position: absolute; right: 12px; bottom: 12px; width: 184px; height: 116px; border: 1px solid var(--line-2); border-radius: 8px; background: rgba(12,12,12,0.9); cursor: crosshair; z-index: 3; touch-action: none; }
+  .tip { position: absolute; z-index: 5; pointer-events: none; width: max-content; max-width: 264px; background: rgba(17,17,17,0.97); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px 9px; font-size: 12px; line-height: 1.45; color: var(--t2); box-shadow: 0 14px 34px -10px rgba(0,0,0,0.75); animation: fade 140ms ease-out; }
+  .tip .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t4); }
+  .tip b { display: block; color: var(--t1); font-weight: 600; font-size: 12.5px; margin: 2px 0 3px; }
+  .tip .a { font-family: var(--mono); font-size: 10.5px; color: var(--t3); margin-top: 5px; }
+
+  /* ---------- drawers: review and build ---------- */
+  .drawer { position: absolute; left: 0; top: 0; bottom: 0; width: 344px; z-index: 4; background: #0d0d0d; border-right: 1px solid var(--line-2); display: flex; flex-direction: column; animation: slide-in 260ms cubic-bezier(.2,.9,.25,1); box-shadow: 24px 0 60px -30px rgba(0,0,0,0.8); }
+  @keyframes slide-in { from { transform: translateX(-14px); opacity: 0; } }
+  .drawer > header { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); position: relative; }
+  .drawer > header h2 { margin: 3px 0 0; font-size: 15px; font-weight: 600; color: var(--t1); }
+  .drawer > header p { margin: 4px 0 0; font-size: 12px; color: var(--t3); }
+  .dbody { overflow: auto; padding: 14px 16px 20px; display: grid; gap: 20px; align-content: start; }
+  .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; }
+  .kpi { background: var(--panel); padding: 10px 12px 11px; }
+  .kpi b { display: block; font-size: 22px; font-weight: 500; color: var(--t1); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.2; }
+  .kpi span { font-size: 11.5px; color: var(--t3); line-height: 1.35; display: block; }
+  .dsec h3 { margin: 0 0 8px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); font-weight: 500; }
+  .dsec p.m { margin: 0 0 8px; font-size: 12px; color: var(--t4); line-height: 1.5; }
+  .rows { display: grid; gap: 2px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 10px; border-radius: 7px; cursor: pointer; border: 1px solid transparent; background: transparent; text-align: left; color: inherit; width: 100%; }
+  .row:hover { background: var(--raised); border-color: var(--line-2); }
+  .row b { color: var(--t1); font-weight: 500; font-size: 13px; }
+  .row .v { font-family: var(--mono); font-size: 11px; color: var(--t2); align-self: center; white-space: nowrap; }
+  .row .sub { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--t4); overflow-wrap: anywhere; }
+  .bar1 { height: 3px; border-radius: 2px; background: var(--line-2); grid-column: 1 / -1; overflow: hidden; }
+  .bar1 i { display: block; height: 100%; background: var(--t2); }
+  .field { display: grid; gap: 5px; }
+  .field > span { font-size: 11.5px; color: var(--t3); }
+  .field input, .field select, .field textarea { background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: var(--t1); width: 100%; box-sizing: border-box; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: #4a4a4a; outline: none; }
+  .field textarea { resize: vertical; min-height: 58px; font-family: var(--sans); line-height: 1.45; }
+  .checks { max-height: 128px; overflow: auto; border: 1px solid var(--line-2); border-radius: 7px; padding: 4px; display: grid; gap: 1px; }
+  .checks label { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--t2); padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+  .checks label:hover { background: var(--raised); }
+  .checks input { accent-color: #fafafa; }
+  .verdicts { display: grid; gap: 5px; font-size: 12px; }
+  .verdicts span { display: flex; gap: 8px; color: var(--t2); }
+  .verdicts i { font-style: normal; font-family: var(--mono); width: 12px; color: var(--t1); flex: none; }
+  .verdicts .no, .verdicts .no i { color: var(--t4); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .impact { font-size: 12.5px; color: var(--t2); }
+  .impact b { color: var(--t1); font-weight: 500; }
+  .exported { width: 100%; min-height: 160px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; color: var(--t2); font-family: var(--mono); font-size: 11px; padding: 8px; box-sizing: border-box; }
+  .example { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t4); border: 1px dashed var(--line-2); border-radius: 4px; padding: 1px 6px; }
+
+  /* ---------- trace: specs, rendered specs, chains, decision matrix ---------- */
+  .spec { font-family: var(--mono); font-size: 11px; line-height: 1.55; color: var(--t2); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 10px 12px; margin: 0; max-height: 300px; overflow: auto; white-space: pre; }
+  .spec .k { color: var(--t3); } .spec .s { color: var(--t1); } .spec .n { color: var(--t3); }
+  .jr { display: grid; gap: 8px; font-size: 12px; }
+  .jr-route { border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: #0e0e0e; }
+  .jr-route > .bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 11px; color: var(--t2); }
+  .jr-route > .bar i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); display: inline-block; }
+  .jr-body { padding: 10px; display: grid; gap: 8px; }
+  .jr-view, .jr-slice { border: 1px dashed var(--line-2); border-radius: 6px; padding: 8px 9px; display: grid; gap: 6px; }
+  .jr-view > .h, .jr-slice > .h { font-family: var(--mono); font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--t3); display: flex; justify-content: space-between; gap: 8px; }
+  .jr-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .jr-btn { border: 1px solid #3a3a3a; background: #1a1a1a; color: var(--t1); border-radius: 5px; padding: 3px 8px; font-size: 11.5px; cursor: default; }
+  .jr-btn.key { color: var(--t3); font-family: var(--mono); font-size: 10.5px; }
+  .jr-chip { border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 8px; font-family: var(--mono); font-size: 10.5px; color: var(--t2); }
+  .chain { display: grid; gap: 10px; }
+  .chain h4 { margin: 0 0 4px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); font-weight: 500; }
+  .chain .items { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chain button { border: 1px solid var(--line-2); background: var(--raised); color: var(--t2); border-radius: 5px; padding: 2px 7px; font-size: 11.5px; cursor: pointer; }
+  .chain button:hover { color: var(--t1); border-color: #3c3c3c; }
+  .ctrls { display: grid; gap: 1px; max-height: 260px; overflow: auto; }
+  .ctrls div { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 4px 6px; border-radius: 5px; font-size: 12px; color: var(--t2); }
+  .ctrls div:hover { background: var(--raised); }
+  .ctrls .mono { font-size: 10.5px; color: var(--t4); }
+  .flist { display: grid; gap: 2px; font-family: var(--mono); font-size: 11px; color: var(--t3); }
+  .mx { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .mx th { font-family: var(--mono); font-weight: 500; font-size: 10px; letter-spacing: 0.04em; color: var(--t3); text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line-2); vertical-align: bottom; }
+  .mx td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .mx td.rh { color: var(--t1); font-weight: 500; }
+  .mx .cell { display: grid; gap: 2px; }
+  .mx .door { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; }
+  .mx .door.one { color: var(--t1); } .mx .door.two { color: var(--t3); }
+  .mx .rv { font-family: var(--mono); font-size: 10px; color: var(--t4); }
+  .mxwrap { border: 1px solid var(--line-2); border-radius: 8px; }
+  .mx { table-layout: fixed; }
+  .mx th:first-child, .mx td:first-child { width: 20%; }
+  .mx td, .mx th { overflow-wrap: anywhere; }
+  .pop .tabbody { max-height: min(56vh, 480px); overflow: auto; }
+  .drawer.wide { width: 560px; }
+  @media (max-width: 640px) { .drawer.wide { width: 100%; } }
+
+
+  /* real source listing */
+  .codecard { display: grid; gap: 10px; font-size: 12px; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .codecard > *, .cgr > *, .cg-cols > * { min-width: 0; }
+  .cg-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+  .codecard header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .codecard .fpath { color: var(--t1); font-size: 12px; word-break: break-all; }
+  .codecard .fmeta, .codecard .via { color: var(--t4); font-size: 11px; }
+  .exports { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ex { font-family: var(--mono); font-size: 11px; color: var(--t2); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+  .ex b { color: var(--t4); font-weight: 400; margin-right: 5px; } .ex i { color: var(--t4); font-style: normal; }
+  .listing { background: #0a0a0a; border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 0; overflow: auto; max-height: 340px; font: 11.5px/1.55 var(--mono); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
+  .codecard.big .listing { max-height: none; }
+  .ln { display: grid; grid-template-columns: 44px 1fr; white-space: pre; }
+  .ln i { font-style: normal; color: #4a4a4a; text-align: right; padding-right: 12px; user-select: none; }
+  .ln code { color: #cfcfcf; font: inherit; padding-right: 12px; }
+  .ln .k { color: #fafafa; font-weight: 500; } .ln .s { color: #a3a3a3; } .ln .c { color: #6b6b6b; font-style: italic; }
+  .listing .gap { color: #4a4a4a; padding: 2px 0 2px 30px; }
+  .codefoot { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .codecard.big .codefoot { grid-template-columns: 1fr 1fr; }
+  .codefoot h4 { margin: 0 0 6px; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); }
+  .cm { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid var(--line); color: var(--t2); }
+  .cm .mono { color: var(--t3); font-size: 11px; } .cm time { color: var(--t4); font-family: var(--mono); font-size: 10.5px; }
+  .tf { font-size: 11px; color: var(--t2); padding: 2px 0; word-break: break-all; }
+
+  .cgr { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 10px; }
+  .cgr h4 { margin: 0; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); display: flex; justify-content: space-between; gap: 8px; }
+  .cgr h4 span { text-transform: none; letter-spacing: 0; color: var(--t4); }
+  .cgr h5 { margin: 0 0 5px; font: 500 11px var(--sans); color: var(--t3); }
+  .cg-kpis { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--t3); }
+  .cg-kpis b { color: var(--t1); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cg-defs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .cg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cg-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11.5px; color: var(--t2); min-width: 0; }
+  .cg-row .mono { font-size: 10.5px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-row .sub { font-size: 11px; color: var(--t4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-n { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--t3); }
+  .cg-warn { border: 1px dashed #4a4a4a; border-radius: 8px; padding: 8px 10px; }
+
+  .conn { border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; margin: 0 0 10px; display: grid; gap: 8px; }
+  .conn h4 { margin: 0; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); display: flex; justify-content: space-between; }
+  .conn h4 span { text-transform: none; letter-spacing: 0; color: var(--t4); }
+  .conn-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: start; }
+  .conn-row b { display: block; font-size: 12.5px; font-weight: 500; color: var(--t1); }
+  .conn-row small { display: block; font-size: 11px; color: var(--t3); line-height: 1.45; overflow-wrap: anywhere; }
+  .conn-row time { font: 10.5px var(--mono); color: var(--t4); }
+  .conn-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: #3a3a3a; box-shadow: 0 0 0 1px #4a4a4a inset; }
+  .conn-dot.up { background: #fafafa; } .conn-dot.warn { background: #8f8f8f; } .conn-dot.down { background: transparent; box-shadow: 0 0 0 1.5px #8f8f8f inset; }
+
+  .timeline .t.code { bottom: auto; top: 14px; background: #4a4a4a; width: 2px; margin-left: -1px; }
+  .timeline .t.code.cur { background: #fafafa; box-shadow: 0 0 8px 1px rgba(255,255,255,0.45); }
+  .sembox { position: fixed; z-index: 30; width: 380px; max-width: calc(100vw - 16px); background: #0d0d0d; border: 1px solid var(--line-2); border-radius: 10px; padding: 6px; box-shadow: 0 18px 50px -12px rgba(0,0,0,0.8); display: grid; gap: 2px; }
+  .sembox .semhead { font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); padding: 4px 8px 6px; display: flex; justify-content: space-between; }
+  .sembox .semhead span { text-transform: none; letter-spacing: 0; color: var(--t4); }
+  .sembox button { display: grid; grid-template-columns: 8px 1fr; gap: 10px; align-items: start; text-align: left; background: none; border: 0; border-radius: 7px; padding: 7px 8px; color: var(--t2); font: inherit; cursor: pointer; }
+  .sembox button:hover, .sembox button.first { background: #1a1a1a; }
+  .sembox button > b { width: 7px; height: 7px; border-radius: 50%; background: var(--t3); margin-top: 6px; } .sembox button > b.domain { background: var(--t1); }
+  .sembox strong { display: block; color: var(--t1); font-weight: 500; font-size: 13px; }
+  .sembox small { display: block; font-size: 11.5px; color: var(--t3); line-height: 1.4; }
+  .sembox i { display: block; font: normal 10.5px var(--mono); color: var(--t4); margin-top: 2px; }
+  /* live layer: people, channels, agents */
+  .livecount { font-family: var(--mono); font-size: 10.5px; background: var(--t1); color: var(--ground); border-radius: 8px; padding: 0 5px; margin-left: 4px; }
+  .dbody.live { gap: 12px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding-bottom: 14px; }
+  .dbody.live > * { flex: none; }
+  .dbody.live > .lfeedwrap { flex: 1; min-height: 72px; display: flex; flex-direction: column; }
+  .lnote { border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; margin: 0; }
+  .linkish { background: none; border: 0; color: var(--t1); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+  .lpeople { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lperson { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-2); background: var(--panel); border-radius: 22px; padding: 4px 12px 4px 4px; color: var(--t2); cursor: pointer; text-align: left; font: inherit; }
+  .lperson:disabled { cursor: default; }
+  .lperson:not(:disabled):hover { border-color: #3a3a3a; }
+  .lperson b { display: block; font-size: 12px; font-weight: 500; color: var(--t1); line-height: 1.2; }
+  .lperson small { display: block; font-size: 11px; color: var(--t3); line-height: 1.2; max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lav { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; font-size: 11px; font-weight: 600; color: var(--ground); background: var(--c, #8f8f8f); box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset; }
+  .lav.agent { background: #1a1a1a; color: var(--t1); border: 1px dashed #5e5e5e; }
+  .lagent { border: 1px dashed #3a3a3a; border-radius: 22px; padding: 4px 12px 4px 10px; display: flex; gap: 8px; align-items: center; min-height: 32px; box-sizing: border-box; }
+  .lagent b { display: block; line-height: 1.2; }
+  .lagent b { font-size: 12px; font-weight: 500; color: var(--t1); }
+  .lagent small { display: block; line-height: 1.2; max-width: 150px; font-size: 11px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ldot { width: 7px; height: 7px; border-radius: 50%; background: #3a3a3a; }
+  .lagent.on .ldot { background: var(--t1); animation: lpulse 1.1s ease-in-out infinite; }
+  @keyframes lpulse { 50% { opacity: 0.25; } }
+  .lchans { display: flex; flex-wrap: wrap; gap: 5px; }
+  .lch { border: 1px solid var(--line-2); background: none; color: var(--t2); border-radius: 6px; padding: 3px 9px; font: 12px var(--sans); cursor: pointer; }
+  .lch[aria-pressed="true"] { background: var(--t1); color: var(--ground); border-color: var(--t1); }
+  .lch small { color: var(--t4); font-family: var(--mono); }
+  .lchanrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lfollow { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t3); margin-left: auto; }
+  .lfeed { flex: 1; min-height: 0; overflow: auto; display: grid; gap: 10px; align-content: start; padding-right: 4px; }
+  .lmsg { border-left: 2px solid var(--line-2); padding: 2px 0 2px 10px; }
+  .lmsg.agent { border-left-style: dashed; border-left-color: #5e5e5e; }
+  .lmsg.k-reflection { border-left-color: var(--t2); }
+  .lmsg header { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .lmsg header .lav { width: 18px; height: 18px; font-size: 9.5px; }
+  .lmsg header b { color: var(--t1); font-weight: 500; }
+  .lmsg time, .lsm time { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--t4); }
+  .ltag { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--t3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; }
+  .ltext { font-size: 12.5px; color: var(--t2); line-height: 1.55; margin-top: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lsteps { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--t2); display: grid; gap: 5px; }
+  .lsteps div { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .lchip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-2); background: var(--panel); color: var(--t1); border-radius: 5px; padding: 0 6px; font: 11.5px var(--sans); cursor: pointer; vertical-align: 1px; }
+  .lchip:hover { border-color: #4a4a4a; }
+  .lchip b { width: 6px; height: 6px; border-radius: 50%; background: var(--t3); }
+  .lchip b.domain { background: var(--t1); }
+  .lhand { margin-top: 6px; }
+  .lslack { border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; max-height: 96px; overflow: auto; }
+  .lslack h4 { margin: 0 0 6px; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); }
+  .lslack h4 small { text-transform: none; letter-spacing: 0; color: var(--t4); }
+  .lsm { font-size: 12px; color: var(--t2); padding: 4px 0; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; }
+  .lsm b { color: var(--t1); font-weight: 500; } .lsm div { grid-column: 1 / -1; color: var(--t3); overflow-wrap: anywhere; }
+  .lcompose { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .lcompose textarea, .lbridge input { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; color: var(--t1); font: 13px var(--sans); padding: 8px 10px; resize: vertical; }
+  .lcompose textarea:focus, .lbridge input:focus { outline: none; border-color: #4a4a4a; }
+  .lrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .lrow .grow { flex: 1; }
+  .lrow select { background: var(--panel); color: var(--t2); border: 1px solid var(--line-2); border-radius: 7px; padding: 5px 8px; font: 12px var(--sans); }
+  .lbridge input { flex: 1; width: auto; padding: 6px 10px; }
+  .lslackhits { display: flex; gap: 5px; flex-wrap: wrap; font-size: 12px; color: var(--t3); }
+
+  /* ---------- studio: the data as physical objects ---------- */
+  .studio { position: absolute; inset: 0; z-index: 2; background: #0b0b0b; }
+  .studio-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  .studio-gl:active { cursor: grabbing; }
+  .studio-hud { position: absolute; right: 16px; bottom: 14px; z-index: 3; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); display: flex; align-items: center; gap: 8px; pointer-events: none; }
+  .studio-hud::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--t4); }
+  .studio-hud[data-state="dev"]::before { background: var(--t2); animation: blink 900ms steps(2) infinite; }
+  .studio-hud[data-state="done"]::before { background: var(--t1); }
+  @keyframes blink { 50% { opacity: 0.2; } }
+  .studio-loading { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--t4); }
+  .studio-card { position: absolute; left: 16px; bottom: 40px; z-index: 3; width: 340px; max-width: calc(100% - 32px); max-height: calc(100% - 120px); overflow: auto; background: rgba(14,14,14,0.78); backdrop-filter: blur(18px) saturate(1.1); -webkit-backdrop-filter: blur(18px) saturate(1.1); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px 16px 14px; box-shadow: 0 30px 80px -20px rgba(0,0,0,0.9); animation: pop-in 220ms cubic-bezier(.2,.9,.25,1.05); }
+  .studio-card h3 { margin: 4px 0 2px; font-size: 16px; font-weight: 600; color: var(--t1); letter-spacing: -0.01em; text-wrap: balance; }
+  .studio-card .ko { font-size: 12.5px; color: var(--t3); }
+  .studio-card .path { font-family: var(--mono); font-size: 11px; color: var(--t3); overflow-wrap: anywhere; margin-top: 2px; }
+  .studio-card p { font-family: var(--serif); font-size: 14px; line-height: 1.5; color: var(--t2); margin: 10px 0 0; }
+  .studio-card .links { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .studio-card .links button { border: 1px solid var(--line-2); background: rgba(255,255,255,0.03); color: var(--t2); border-radius: 5px; padding: 2px 7px; font-size: 11.5px; cursor: pointer; }
+  .studio-card .links button:hover { color: var(--t1); border-color: #444; }
+  .studio-card .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .srcpick { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line-2); background: rgba(17,17,17,0.9); border-radius: 8px; padding: 2px 4px 2px 10px; font-size: 11.5px; color: var(--t3); }
+  .srcpick select { background: transparent; border: 0; color: var(--t1); font-size: 12.5px; padding: 4px 2px; }
+  .srcpick select option { background: #111; }
+  .src { border: 1px solid var(--line-2); border-radius: 9px; padding: 12px; display: grid; gap: 8px; }
+  .src .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .src b { color: var(--t1); font-weight: 500; font-size: 13.5px; }
+  .src .note { font-family: var(--mono); font-size: 10.5px; color: var(--t4); }
+  .badges { display: flex; gap: 6px; font-family: var(--mono); font-size: 10.5px; }
+  .badges span { border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; color: var(--t2); }
+  .badges .fail { border-color: #d4d4d4; color: var(--t1); }
+  .checks2 { display: grid; gap: 4px; }
+  .ck { display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 8px; font-size: 12px; color: var(--t2); }
+  .ck i { font-style: normal; font-family: var(--mono); color: var(--t1); }
+  .ck.pass i, .ck.info i { color: var(--t3); }
+  .ck .v { font-family: var(--mono); font-size: 10.5px; color: var(--t3); white-space: nowrap; }
+  .ck .d { grid-column: 2 / -1; font-size: 11px; color: var(--t4); }
+  .ck .ex { grid-column: 2 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--t3); overflow-wrap: anywhere; }
+  @media (max-width: 640px) { .studio-card { left: 8px; right: 8px; bottom: 8px; width: auto; } }
+
+  /* ---------- expanded viewer (explicit action only) ---------- */
+  .scrim { position: fixed; inset: 0; z-index: 10; background: rgba(4, 4, 6, 0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: grid; place-items: center; padding-inline: 16px; padding-block: 16px; animation: fade 180ms ease-out; }
+  @keyframes fade { from { opacity: 0; } }
+  .viewer { width: min(1120px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 40px 120px -20px rgba(0,0,0,0.8); overflow: hidden; animation: rise 260ms cubic-bezier(.2,.9,.25,1.04); }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(0.985); } }
+  .viewer .vhead { display: flex; align-items: center; gap: 14px; padding: 12px 14px 0 18px; flex-wrap: wrap; }
+  .viewer .vhead h2 { margin: 0; font-size: 16px; color: var(--t1); font-weight: 600; }
+  .viewer .vhead .tabs { padding: 0; margin-left: 8px; }
+  .viewer .vhead .close { position: static; margin-left: auto; }
+  .viewer .vbody { overflow: auto; padding: 14px 18px 18px; border-top: 1px solid var(--line); margin-top: 10px; }
+  .docwrap { display: grid; grid-template-columns: minmax(0, 700px) minmax(0, 1fr); gap: 22px; align-items: start; justify-content: center; }
+  .docwrap .paperframe-big { background: #d8d8d2; padding: 18px; border-radius: 8px; overflow: hidden; }
+  .docwrap .paperframe-big .paper { width: 100%; max-width: 664px; margin: 0 auto; box-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 12px 32px -8px rgba(0,0,0,0.35); }
+  .margin h4 { margin: 0 0 10px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t3); font-weight: 500; }
+  .margin .note { border-left: 1px solid #4a4a4a; padding: 2px 0 2px 12px; margin-bottom: 14px; font-size: 12.5px; color: var(--t2); line-height: 1.5; }
+  .margin .note b { display: block; font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--t1); margin-bottom: 3px; }
+  .margin .quiet { font-size: 12.5px; color: var(--t4); }
+  .presenter .frame.slideframe { max-width: 100%; }
+  .kbd { font-family: var(--mono); font-size: 10.5px; color: var(--t4); }
+
+  @media (max-width: 860px) {
+    .docwrap { grid-template-columns: 1fr; }
+    .legend { display: none; }
+  }
+  @media (max-width: 640px) {
+    .drawer { width: 100%; }
+    .mini, .crumbs { display: none; }
+    .speed small { display: none; }
+    .types { display: none; }
+    .pop { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; max-width: none; max-height: 62%; overflow: auto; }
+    .find input { width: 150px; }
+    .brand .sub { display: none; }
+    .timeline .lab { display: none; }
+  }
+  /* ---------- viewport fit: the stage keeps the height; chrome gives way first ---------- */
+  @supports (height: 100dvh) { html, body, .app { height: 100dvh; } }
+  .bar { scrollbar-width: none; }
+  .bar::-webkit-scrollbar { display: none; }
+  @media (max-width: 900px) {
+    /* one row that scrolls sideways instead of three rows that eat the stage */
+    .bar { flex-wrap: nowrap; overflow-x: auto; gap: 10px; padding-block: 8px; }
+    .bar > * { flex: none; }
+    .brand .sub { display: none; }
+    .find { margin-left: 0; }
+    .find input { width: 132px; max-width: none; }
+  }
+  @media (max-height: 560px) {
+    .bar { padding-block: 6px; }
+    .hint, .types, .mini { display: none; }
+    .transport { padding-block: 6px 8px; gap: 2px 12px; }
+    .transport .play { width: 28px; height: 28px; }
+    .caption { flex-wrap: nowrap; }
+    .caption .n:nth-of-type(n+3), .caption .gap { display: none; }
+    .timeline { height: 20px; }
+    .timeline .lab, .speed small { display: none; }
+    .pop { max-height: calc(100% - 16px); overflow: auto; }
+  }
+  @media (max-width: 640px) {
+    /* play · caption · speed on one row, the timeline full width beneath */
+    .transport .play { grid-row: 1; grid-column: 1; }
+    .caption { grid-row: 1; grid-column: 2; }
+    .speed { grid-row: 1; grid-column: 3; }
+    .timeline { grid-row: 2; grid-column: 1 / -1; }
+    .caption .s { flex-basis: 100%; order: 9; }
+    .speed .seg button { padding: 3px 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pop, .scrim, .viewer { animation: none; }
+  }
+</style>
+
+<div class="app">
+  <div class="bar">
+    <div class="brand"><h1>Atlas Current</h1><span class="sub" id="stats"></span></div>
+    <div class="seg" role="group" aria-label="Panels" id="tools"><button aria-pressed="false" data-drawer="review">Review</button><button aria-pressed="false" data-drawer="build">Build</button><button aria-pressed="false" data-drawer="decide">Decide</button><button aria-pressed="false" data-drawer="sources">Sources</button><button aria-pressed="false" data-drawer="live" id="livebtn">Live <span class="livecount" hidden></span></button></div>
+    <div class="seg" role="group" aria-label="View" id="views"><button aria-pressed="true" data-view="map">Map</button><button aria-pressed="false" data-view="tiers">Tiers</button><button aria-pressed="false" data-view="time">Time</button><button aria-pressed="false" data-view="trace">Trace</button><button aria-pressed="false" data-view="studio">Studio</button></div>
+    <label class="find">
+      <svg viewBox="0 0 16 16" fill="none" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
+      <input id="find" list="concepts" placeholder="Find a concept" autocomplete="off" aria-label="Find a concept">
+      <datalist id="concepts"></datalist>
+    </label>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="map" aria-label="Map of the Ontology Atlas vault. Use Find to open a concept."></canvas>
+    <div class="hint" id="hint">Drag to pan · scroll to zoom · click a concept</div>
+    <div class="toolrow">
+      <div class="navc" id="nav"></div>
+      <div class="rightc">
+        <label class="srcpick" id="srcwrap" hidden><span>Source</span><select id="srcpick" aria-label="Data source"></select></label>
+        <div class="seg" role="group" aria-label="Lens" id="lens"><button aria-pressed="true" data-lens="structure">Structure</button><button aria-pressed="false" data-lens="alignment">Alignment</button><button aria-pressed="false" data-lens="activity">Activity</button></div>
+        <div class="filters" role="group" aria-label="Show" id="filters"><button aria-pressed="true" data-f="domain"><span class="glyph dom"></span>Domains</button><button aria-pressed="true" data-f="capability"><span class="glyph cap"></span>Capabilities</button><button aria-pressed="true" data-f="element"><span class="glyph el"></span>Elements</button><button aria-pressed="true" data-f="c"><span class="glyph c"></span>Contains</button><button aria-pressed="true" data-f="d"><span class="glyph d"></span>Depends on</button></div>
+    <div class="seg" role="group" aria-label="Forecast" id="fcseg" hidden><button aria-pressed="true" id="fc" title="Show what the change history predicts next (F)">Forecast</button></div>
+    <div class="types" id="types" hidden><span><i style="background:var(--w-build)"></i>Build · feat</span><span><i style="background:var(--w-repair)"></i>Repair · fix</span><span><i style="background:var(--w-plan)"></i>Plan · docs</span><span><i style="background:var(--w-tend)"></i>Tend · refactor, chore</span></div>
+      </div>
+    </div>
+    <div class="studio" id="studio" hidden><div class="studio-loading" id="studio-loading">Setting the stage…</div></div>
+    <canvas class="mini" id="mini" aria-label="Minimap: click to move the view"></canvas>
+    <div class="tip" id="tip" hidden></div>
+  </div>
+
+  <div class="transport">
+    <button class="play" id="play" aria-label="Play the change history"><svg viewBox="0 0 16 16" id="playIcon"><path d="M4 2.5v11l9.5-5.5z"/></svg></button>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="speed"><div class="seg" role="group" aria-label="Playback speed" id="speed"><button aria-pressed="true" data-x="1">1×</button><button aria-pressed="false" data-x="4">4×</button><button aria-pressed="false" data-x="16">16×</button></div><small>flow time</small></div>
+    <div class="timeline" id="timeline" role="slider" tabindex="0" aria-label="Change history" aria-valuemin="1"><div class="axis"></div></div>
+  </div>
+</div>
+
+<script type="application/json" id="atlas-data">__DATA__</script>
+<script type="application/json" id="atlas-code">__CODE__</script>
+<script type="application/json" id="atlas-cgr">__CGR__</script>
+<script type="application/json" id="atlas-timeline">__TIMELINE__</script>
+<script type="application/json" id="atlas-semantic">__SEMANTIC__</script>
+<script type="application/json" id="trace-data">__TRACE__</script>
+<script type="application/json" id="sources-data">__SOURCES__</script>
+<input type="file" id="folderpick" webkitdirectory directory multiple hidden>
+<script>__SOURCESJS__</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(() => {
+'use strict';
+const D = JSON.parse(document.getElementById('atlas-data').textContent);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const KIND = { domain: 'Domain', capability: 'Capability', element: 'Element' };
+
+// ---------------------------------------------------------------- graph model
+const nodes = D.nodes.map(n => ({ ...n, en: 0, touch: 0 }));
+const byId = new Map(nodes.map(n => [n.s, n]));
+const edges = D.edges.map((e, i) => ({ ...e, i, A: byId.get(e.a), B: byId.get(e.b), en: 0 }));
+const incident = new Map(nodes.map(n => [n, []]));
+for (const e of edges) { incident.get(e.A).push(e); incident.get(e.B).push(e); }
+const contents = n => incident.get(n).filter(e => e.y === 'c' && e.A === n).map(e => e.B);
+const containers = n => incident.get(n).filter(e => e.y === 'c' && e.B === n).map(e => e.A);
+const dependsOn = n => incident.get(n).filter(e => e.y === 'd' && e.A === n).map(e => e.B);
+const domainOf = n => n.k === 'domain' ? n : (containers(n).find(c => c.k === 'domain') || containers(n).map(domainOf).find(Boolean) || null);
+
+/**
+ * Impact reach, the same rule the signal kernel propagates: a change reaches everything that
+ * depends on it, and everything it contains. Breadth-first, so `hop` is the shortest hop count
+ * and `via` is the edge the change first arrived along.
+ */
+function reach(src) {
+  const hop = new Map([[src, 0]]), via = new Map(), order = [src];
+  for (let i = 0; i < order.length; i++) {
+    const n = order[i], h = hop.get(n);
+    for (const e of incident.get(n)) {
+      const next = e.y === 'd' && e.B === n ? e.A : e.y === 'c' && e.A === n ? e.B : null;
+      if (!next || hop.has(next)) continue;
+      hop.set(next, h + 1); via.set(next, e); order.push(next);
+    }
+  }
+  return { hop, via, order, max: Math.max(...hop.values()) };
+}
+
+// Parse a vault page body into its standfirst and sections.
+function parseBody(body) {
+  const lines = body.split('\n');
+  const out = { desc: '', sections: [] };
+  let cur = null, para = [];
+  const flush = () => { if (para.length) { (cur ? cur.blocks : (out.pre ??= [])).push({ p: para.join(' ') }); para = []; } };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (/^#{2,3}\s/.test(line)) { flush(); cur = { h: line.replace(/^#+\s*/, ''), blocks: [] }; out.sections.push(cur); continue; }
+    if (/^\s*[-*]\s+/.test(line)) { flush(); const b = cur ? cur.blocks : (out.pre ??= []); const last = b[b.length - 1]; const item = line.replace(/^\s*[-*]\s+/, ''); if (last && last.ul) last.ul.push(item); else b.push({ ul: [item] }); continue; }
+    if (!line.trim()) { flush(); continue; }
+    if (/^#\s/.test(line)) continue;
+    para.push(line.trim());
+  }
+  flush();
+  const pre = out.pre || [];
+  const first = pre.findIndex(b => b.p);
+  if (first >= 0) { out.desc = pre[first].p; pre.splice(first, 1); }
+  out.rest = pre;
+  return out;
+}
+const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+const firstSentence = s => { const m = String(s).match(/^.*?[.!?](\s|$)/); return (m ? m[0] : s).trim(); };
+for (const n of nodes) n.doc = parseBody(n.body || '');
+
+// ---------------------------------------------------------------- layout (computed once)
+const domains = nodes.filter(n => n.k === 'domain');
+const anchor = new Map();
+domains.forEach((d, i) => { const a = -Math.PI / 2 + (i / domains.length) * Math.PI * 2 + Math.PI / 4; anchor.set(d, { x: Math.cos(a) * 360, y: Math.sin(a) * 300 }); });
+const anchorOf = n => anchor.get(domainOf(n)) || { x: 0, y: 0 };
+const R = n => n.k === 'domain' ? 11 : n.k === 'capability' ? 5 + Math.min(4, Math.sqrt(contents(n).length) * 1.4) : 3;
+const links = edges.map(e => ({ source: e.A, target: e.B, y: e.y }));
+d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).distance(l => l.y === 'c' ? (l.source.k === 'domain' ? (l.target.k === 'capability' ? 110 : 150) : 34) : 120).strength(l => l.y === 'c' ? (l.source.k === 'domain' ? 0.25 : 0.8) : 0.05))
+  .force('charge', d3.forceManyBody().strength(n => n.k === 'domain' ? -900 : n.k === 'capability' ? -190 : -40).distanceMax(420))
+  .force('collide', d3.forceCollide(n => R(n) + (n.k === 'element' ? 5 : 9)).iterations(2))
+  .force('x', d3.forceX(n => anchorOf(n).x).strength(n => n.k === 'domain' ? 0.5 : 0.06))
+  .force('y', d3.forceY(n => anchorOf(n).y).strength(n => n.k === 'domain' ? 0.5 : 0.06))
+  .stop().tick(520);
+for (const e of edges) { // a stable bend per edge so parallel curves read apart
+  let h = 2166136261; for (const c of e.a + e.b) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  e.bend = ((h >>> 0) % 1000 / 1000 - 0.5) * 0.36 + (e.y === 'd' ? 0.14 : 0);
+  e.phase = (h >>> 0) % 997 / 997;
+}
+
+// ---------------------------------------------------------------- canvas + camera
+const stage = $('#stage'), canvas = $('#map'), ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+const cam = { k: 1, x: 0, y: 0 };
+let camAnim = null;
+function resize() {
+  const r = stage.getBoundingClientRect(); W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+}
+function fit(pad = 60) {
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const k = Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (y1 - y0), 1.6);
+  return { k, x: W / 2 - ((x0 + x1) / 2) * k, y: H / 2 - ((y0 + y1) / 2) * k };
+}
+const sx = x => x * cam.k + cam.x, sy = y => y * cam.k + cam.y;
+function flyTo(target, ms = 650) {
+  if (REDUCED || ms === 0) { Object.assign(cam, target); camAnim = null; return; }
+  camAnim = { from: { ...cam }, to: target, t0: performance.now(), ms };
+}
+function focusNode(n) {
+  const k = Math.max(cam.k, 1.25);
+  const side = W > 900 ? -140 : 0; // leave room for the popover on the right
+  flyTo({ k, x: W / 2 + side - n.x * k, y: H / 2 - n.y * k });
+}
+
+// curve geometry (quadratic, bend perpendicular to the chord)
+function ctrl(e) {
+  const ax = e.A.x, ay = e.A.y, bx = e.B.x, by = e.B.y;
+  return { x: (ax + bx) / 2 - (by - ay) * e.bend, y: (ay + by) / 2 + (bx - ax) * e.bend };
+}
+function at(e, t, c = ctrl(e)) {
+  const u = 1 - t;
+  return { x: u * u * e.A.x + 2 * u * t * c.x + t * t * e.B.x, y: u * u * e.A.y + 2 * u * t * c.y + t * t * e.B.y };
+}
+
+// ---------------------------------------------------------------- energy
+const pulses = [];
+const HOP_MS = REDUCED ? 0 : 520;
+function fire(src, { delay = 0, strength = 1, cap = 140 } = {}) {
+  const now = performance.now() + delay;
+  const r = reach(src);
+  src.en = Math.max(src.en, strength); src.touch = 1;
+  let budget = cap;
+  for (const n of r.order) {
+    if (n === src || budget-- <= 0) continue;
+    const e = r.via.get(n), h = r.hop.get(n);
+    const forward = e.A === r.order.find(x => x === (e.A === n ? e.B : e.A)) ? e.A !== n : e.A !== n;
+    if (REDUCED) { n.en = Math.max(n.en, strength * 0.8); continue; }
+    pulses.push({ e, from: e.A === n ? e.B : e.A, to: n, t0: now + (h - 1) * HOP_MS, dur: HOP_MS * 0.92, s: strength * Math.pow(0.86, h - 1), done: false, forward });
+  }
+  return r;
+}
+
+// ---------------------------------------------------------------- interaction
+let hover = null, selected = null, drag = null;
+const pointers = new Map();
+function pick(px, py) {
+  let best = null, bd = Infinity;
+  for (const n of nodes) {
+    const dx = sx(n.x) - px, dy = sy(n.y) - py, d = dx * dx + dy * dy, r = Math.max(9, R(n) * cam.k + 5);
+    if (d < r * r && d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+canvas.addEventListener('pointerdown', ev => {
+  canvas.setPointerCapture(ev.pointerId);
+  pointers.set(ev.pointerId, { x: ev.offsetX, y: ev.offsetY });
+  if (pointers.size === 1) drag = { x: ev.offsetX, y: ev.offsetY, cx: cam.x, cy: cam.y, moved: 0 };
+  else drag = null;
+  camAnim = null;
+});
+canvas.addEventListener('pointermove', ev => {
+  const prev = pointers.get(ev.pointerId);
+  if (pointers.size === 2 && prev) {
+    const [a, b] = [...pointers.values()];
+    const d0 = Math.hypot(a.x - b.x, a.y - b.y);
+    prev.x = ev.offsetX; prev.y = ev.offsetY;
+    const [c, d] = [...pointers.values()];
+    const d1 = Math.hypot(c.x - d.x, c.y - d.y);
+    if (d0 > 0) zoomAt((c.x + d.x) / 2, (c.y + d.y) / 2, d1 / d0);
+    return;
+  }
+  if (prev) { prev.x = ev.offsetX; prev.y = ev.offsetY; }
+  if (drag) {
+    const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y;
+    drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+    if (drag.moved > 3) { cam.x = drag.cx + dx; cam.y = drag.cy + dy; canvas.classList.add('dragging'); }
+    return;
+  }
+  hover = pick(ev.offsetX, ev.offsetY);
+  canvas.classList.toggle('over', !!hover);
+});
+function endPointer(ev) {
+  pointers.delete(ev.pointerId);
+  canvas.classList.remove('dragging');
+  if (drag && drag.moved <= 3 && ev.type === 'pointerup') {
+    const n = pick(ev.offsetX, ev.offsetY);
+    if (n) select(n); else closePop();
+  }
+  drag = null;
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => { if (!drag) hover = null; });
+function zoomAt(px, py, f) {
+  const k = Math.min(4, Math.max(0.35, cam.k * f)); f = k / cam.k;
+  cam.x = px - (px - cam.x) * f; cam.y = py - (py - cam.y) * f; cam.k = k;
+}
+canvas.addEventListener('wheel', ev => { ev.preventDefault(); camAnim = null; zoomAt(ev.offsetX, ev.offsetY, Math.exp(-ev.deltaY * 0.0016)); }, { passive: false });
+
+// ---------------------------------------------------------------- drawing
+const COL = { contains: 'rgba(208,214,224,0.075)', dep: 'rgba(113,112,255,0.2)', t1: '#f7f8f8', t2: '#d0d6e0', t3: '#8a8f98', t4: '#62666d' };
+function drawEdges(t) {
+  const focus = selected || hover;
+  const lit = focus ? new Set(incident.get(focus)) : null;
+  for (const e of edges) {
+    const c = ctrl(e);
+    ctx.beginPath(); ctx.moveTo(sx(e.A.x), sy(e.A.y)); ctx.quadraticCurveTo(sx(c.x), sy(c.y), sx(e.B.x), sy(e.B.y));
+    let col = e.y === 'c' ? COL.contains : COL.dep;
+    if (lit) col = lit.has(e) ? (e.y === 'c' ? 'rgba(208,214,224,0.42)' : 'rgba(150,149,255,0.75)') : (e.y === 'c' ? 'rgba(208,214,224,0.035)' : 'rgba(113,112,255,0.08)');
+    ctx.strokeStyle = col; ctx.lineWidth = e.y === 'd' ? 1.1 : 1; ctx.stroke();
+  }
+  // standing current on dependency edges: slow, faint, always moving the way a change travels
+  if (!REDUCED) {
+    ctx.fillStyle = 'rgba(160,159,255,0.55)';
+    for (const e of edges) {
+      if (e.y !== 'd') continue;
+      const p = (t / 5200 + e.phase) % 1;
+      const q = at({ A: e.B, B: e.A, bend: -e.bend }, p); // flows from the dependency to its dependent
+      ctx.globalAlpha = 0.18 + 0.2 * Math.sin(p * Math.PI);
+      ctx.beginPath(); ctx.arc(sx(q.x), sy(q.y), 1.15, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+function drawPulses(t) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const p = pulses[i];
+    const u = (t - p.t0) / p.dur;
+    if (u < 0) continue;
+    if (u >= 1) { p.to.en = Math.max(p.to.en, p.s); p.e.en = Math.max(p.e.en, p.s * 0.8); pulses.splice(i, 1); continue; }
+    const rev = p.from === p.e.B; // travelling B → A along a dependency
+    const c = ctrl(p.e);
+    const pos = s => at(p.e, rev ? 1 - s : s, c);
+    const ease = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+    const head = ease, tail = Math.max(0, head - 0.34);
+    const N = 14;
+    let prev = pos(tail);
+    for (let j = 1; j <= N; j++) {
+      const s = tail + (head - tail) * (j / N);
+      const q = pos(s);
+      const a = (j / N);
+      ctx.strokeStyle = `rgba(${Math.round(113 + 90 * a)},${Math.round(112 + 90 * a)},255,${(0.08 + 0.7 * a * a) * p.s})`;
+      ctx.lineWidth = 0.8 + 2.4 * a * a;
+      ctx.beginPath(); ctx.moveTo(sx(prev.x), sy(prev.y)); ctx.lineTo(sx(q.x), sy(q.y)); ctx.stroke();
+      prev = q;
+    }
+    const hx = sx(prev.x), hy = sy(prev.y);
+    const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 12);
+    g.addColorStop(0, `rgba(240,240,255,${0.95 * p.s})`); g.addColorStop(0.25, `rgba(160,158,255,${0.55 * p.s})`); g.addColorStop(1, 'rgba(113,112,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, Math.PI * 2); ctx.fill();
+  }
+  // the edge a change just crossed keeps a brief afterglow
+  for (const e of edges) {
+    if (e.en < 0.02) continue;
+    const c = ctrl(e);
+    ctx.strokeStyle = `rgba(140,139,255,${0.5 * e.en})`; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(sx(e.A.x), sy(e.A.y)); ctx.quadraticCurveTo(sx(c.x), sy(c.y), sx(e.B.x), sy(e.B.y)); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawNodes() {
+  const focus = selected || hover;
+  const near = focus ? new Set([focus, ...incident.get(focus).map(e => e.A === focus ? e.B : e.A)]) : null;
+  // energy halos first, additive
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const n of nodes) {
+    if (n.en < 0.02 && n.touch < 0.02) continue;
+    const x = sx(n.x), y = sy(n.y), r = R(n) * Math.max(0.8, cam.k);
+    if (n.en >= 0.02) {
+      const rr = r + 18 * n.en + 4;
+      const g = ctx.createRadialGradient(x, y, r * 0.6, x, y, rr);
+      g.addColorStop(0, `rgba(170,168,255,${0.6 * n.en})`); g.addColorStop(1, 'rgba(113,112,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill();
+    }
+    if (n.touch >= 0.02) {
+      ctx.strokeStyle = `rgba(232,230,217,${0.85 * n.touch})`; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(x, y, r + 5 + (1 - n.touch) * 10, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+  for (const n of nodes) {
+    const x = sx(n.x), y = sy(n.y), r = R(n) * Math.max(0.8, cam.k);
+    const dim = near && !near.has(n);
+    ctx.globalAlpha = dim ? 0.28 : 1;
+    const hot = n.en;
+    if (n.k === 'domain') {
+      ctx.fillStyle = '#0b0c0d'; ctx.strokeStyle = hot > 0.05 ? `rgb(${230 - 40 * hot},${230 - 40 * hot},255)` : COL.t1; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = COL.t1; ctx.beginPath(); ctx.arc(x, y, r * 0.34, 0, Math.PI * 2); ctx.fill();
+    } else if (n.k === 'capability') {
+      ctx.fillStyle = hot > 0.05 ? `rgb(${Math.round(208 + 20 * hot)},${Math.round(214 + 10 * hot)},255)` : COL.t2;
+      ctx.strokeStyle = '#0b0c0d'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+    } else {
+      ctx.fillStyle = hot > 0.05 ? '#b9b8ff' : COL.t3;
+      const s = r * 1.7; ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    }
+    if (n === selected) { ctx.strokeStyle = COL.t1; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+}
+function drawLabels() {
+  const focus = selected || hover;
+  const near = focus ? new Set([focus, ...incident.get(focus).map(e => e.A === focus ? e.B : e.A)]) : null;
+  const cand = [];
+  for (const n of nodes) {
+    let pri = -1;
+    if (n === selected) pri = 100; else if (n === hover) pri = 90;
+    else if (n.k === 'domain') pri = 80;
+    else if (near && near.has(n)) pri = 60;
+    else if (n.en > 0.35) pri = 50;
+    else if (n.k === 'capability' && cam.k > 0.95) pri = 30;
+    else if (n.k === 'element' && cam.k > 1.9) pri = 10;
+    if (pri >= 0) cand.push({ n, pri });
+  }
+  cand.sort((a, b) => b.pri - a.pri);
+  const placed = [];
+  for (const { n, pri } of cand) {
+    const dom = n.k === 'domain';
+    ctx.font = dom ? '500 10.5px "Geist Mono", ui-monospace, monospace' : `${pri >= 90 ? 600 : 500} 11.5px Geist, ui-sans-serif, system-ui, sans-serif`;
+    const text = dom ? n.t.toUpperCase() : n.t;
+    const w = ctx.measureText(text).width + (dom ? text.length * 0.9 : 0);
+    const x = sx(n.x), r = R(n) * Math.max(0.8, cam.k);
+    const y = dom ? sy(n.y) - r - 10 : sy(n.y) + r + 13;
+    const box = { x0: x - w / 2 - 3, x1: x + w / 2 + 3, y0: y - 11, y1: y + 4 };
+    if (pri < 90 && placed.some(b => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
+    placed.push(box);
+    ctx.textAlign = 'center';
+    if (dom) ctx.letterSpacing = '0.9px';
+    ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(9,10,11,0.92)'; ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = dom ? COL.t3 : pri >= 60 || n.en > 0.35 ? COL.t1 : COL.t3;
+    ctx.fillText(text, x, y);
+    if (dom) ctx.letterSpacing = '0px';
+  }
+}
+
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(64, t - last); last = t;
+  if (camAnim) {
+    const u = Math.min(1, (t - camAnim.t0) / camAnim.ms), e = 1 - Math.pow(1 - u, 3);
+    for (const k of ['k', 'x', 'y']) cam[k] = camAnim.from[k] + (camAnim.to[k] - camAnim.from[k]) * e;
+    if (u >= 1) camAnim = null;
+  }
+  const decay = Math.exp(-dt / 1100), fade = Math.exp(-dt / 700);
+  for (const n of nodes) { n.en *= decay; n.touch *= fade; }
+  for (const e of edges) e.en *= fade;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  drawEdges(t); drawPulses(t); drawNodes(); drawLabels();
+  placePop();
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- documents, decks, replays
+const shortUid = u => (u || '').split('-')[0];
+function renderPaper(n) {
+  const d = n.doc, dom = domainOf(n);
+  const sections = d.sections.map(s => `<h3>${esc(s.h)}</h3>${s.blocks.map(b => b.ul ? `<ul>${b.ul.map(li => `<li>${inline(li)}</li>`).join('')}</ul>` : `<p>${inline(b.p)}</p>`).join('')}`).join('');
+  const rest = (d.rest || []).map(b => b.ul ? `<ul>${b.ul.map(li => `<li>${inline(li)}</li>`).join('')}</ul>` : `<p>${inline(b.p)}</p>`).join('');
+  const notes = n.notes.length ? `<div class="notes"><strong>Relation notes</strong><ol>${n.notes.map(([to, text]) => `<li><span class="to">→ ${esc(byId.get(to)?.t || to)}</span>${inline(text)}</li>`).join('')}</ol></div>` : '';
+  const deps = dependsOn(n);
+  return `<article class="paper">
+    <div class="lh"><span>Ontology Atlas · ${KIND[n.k]}</span><span>${esc(n.file)}</span></div>
+    <h1>${esc(n.t)}</h1>
+    ${d.desc ? `<p class="standfirst">${inline(d.desc)}</p>` : ''}
+    <dl class="meta">
+      ${n.p ? `<dt>Implementation</dt><dd>${esc(n.p)}</dd>` : ''}
+      ${dom && dom !== n ? `<dt>Domain</dt><dd>${esc(dom.t)}</dd>` : ''}
+      ${deps.length ? `<dt>Depends on</dt><dd>${deps.map(x => esc(x.t)).join(', ')}</dd>` : ''}
+      ${n.by ? `<dt>Recorded by</dt><dd>${esc(n.by)}</dd>` : ''}
+      <dt>Revision</dt><dd>${n.revs} · ${esc(n.last.h)} · ${esc(n.last.d)}</dd>
+    </dl>
+    ${rest}${sections}${notes}
+    <div class="folio"><span>uid ${esc(shortUid(n.uid))}</span><span>${esc(n.s)}</span></div>
+  </article>`;
+}
+
+function deckFor(dom) {
+  const caps = contents(dom).filter(c => c.k === 'capability');
+  const members = new Set([dom, ...reach(dom).order]);
+  const hist = D.commits.filter(c => c.n.some(s => members.has(byId.get(s))));
+  const elements = [...members].filter(m => m.k === 'element').length;
+  const total = caps.length + 3;
+  const foot = i => `<div class="foot"><span>Ontology Atlas · ${esc(dom.t)} · domain brief</span><span>${i} / ${total}</span></div>`;
+  const slides = [];
+  slides.push(`<div class="slide"><div class="kick">Domain brief</div><h3 class="xl">${esc(dom.t)}</h3><p class="lead">${inline(dom.doc.desc)}</p>
+    <div class="stats"><div class="stat"><b>${caps.length}</b><span>Capabilities</span></div><div class="stat"><b>${elements}</b><span>Elements</span></div><div class="stat"><b>${hist.length}</b><span>Recorded changes</span></div><div class="stat"><b>${esc((hist[hist.length - 1]?.d || '').slice(5, 10).replace('-', '.'))}</b><span>Last change</span></div></div>${foot(1)}</div>`);
+  slides.push(`<div class="slide"><div class="kick">What it holds</div><h3>${caps.length} capabilities, one boundary</h3><div class="grid">${caps.slice(0, 9).map(c => `<div class="card"><b>${esc(c.t)}</b><span>${esc(firstSentence(c.doc.desc))}</span></div>`).join('')}</div>${foot(2)}</div>`);
+  caps.forEach((c, i) => {
+    const inc = (c.doc.sections.find(s => /^includes/i.test(s.h))?.blocks.flatMap(b => b.ul || []) || []).slice(0, 4);
+    const els = contents(c).filter(x => x.k === 'element');
+    const deps = dependsOn(c);
+    slides.push(`<div class="slide"><div class="kick">Capability ${i + 1} of ${caps.length}</div><h3>${esc(c.t)}</h3>
+      <div class="cols"><div><p class="lead" style="font-size:18px;margin-bottom:18px">${inline(firstSentence(c.doc.desc))}</p>${inc.length ? `<ul class="inc">${inc.map(x => `<li>${inline(x)}</li>`).join('')}</ul>` : ''}</div>
+      <div class="side">${els.length ? `<h4>Elements</h4><div class="chips">${els.map(x => `<span class="chip">${esc(x.t)}</span>`).join('')}</div>` : ''}${deps.length ? `<h4>Depends on</h4><div class="chips">${deps.map(x => `<span class="chip dep">${esc(x.t)}</span>`).join('')}</div>` : ''}${c.p ? `<h4>Entry point</h4><div class="chip" style="font-family:var(--mono);font-size:12.5px;display:inline-block">${esc(c.p)}</div>` : ''}</div></div>${foot(i + 3)}</div>`);
+  });
+  slides.push(historySlide(dom, hist, total));
+  return slides;
+}
+function historySlide(dom, hist, total) {
+  // commits per ISO week across the vault's recorded history, drawn to one scale
+  const all = D.commits.map(c => +new Date(c.d));
+  const t0 = Math.min(...all), t1 = Math.max(...all), WEEK = 7 * 864e5;
+  const bins = Math.max(1, Math.ceil((t1 - t0) / WEEK) + 1);
+  const counts = Array(bins).fill(0);
+  for (const c of hist) counts[Math.floor((+new Date(c.d) - t0) / WEEK)]++;
+  const max = Math.max(1, ...counts);
+  const cw = 420, ch = 190, bw = cw / bins;
+  const bars = counts.map((v, i) => `<rect x="${(i * bw + 2).toFixed(1)}" y="${(ch - (v / max) * ch).toFixed(1)}" width="${Math.max(2, bw - 4).toFixed(1)}" height="${((v / max) * ch).toFixed(1)}" rx="2" fill="${i === bins - 1 ? '#c9c8ff' : '#5655c4'}"/>`).join('');
+  const fmt = t => new Date(t).toISOString().slice(5, 10).replace('-', '.');
+  const svg = `<svg width="${cw + 40}" height="${ch + 36}" viewBox="-30 -8 ${cw + 40} ${ch + 36}" role="img" aria-label="Changes per week">
+    <line x1="0" x2="${cw}" y1="${ch}" y2="${ch}" stroke="#2a2b30"/><line x1="0" x2="${cw}" y1="0" y2="0" stroke="#1f2023" stroke-dasharray="3 4"/>
+    <text x="-8" y="4" fill="#8a8f98" font-size="11" text-anchor="end" font-family="Geist Mono, monospace">${max}</text>
+    <text x="-8" y="${ch + 4}" fill="#8a8f98" font-size="11" text-anchor="end" font-family="Geist Mono, monospace">0</text>
+    ${bars}
+    <text x="0" y="${ch + 22}" fill="#8a8f98" font-size="11" font-family="Geist Mono, monospace">${fmt(t0)}</text>
+    <text x="${cw}" y="${ch + 22}" fill="#8a8f98" font-size="11" text-anchor="end" font-family="Geist Mono, monospace">${fmt(t1)}</text></svg>`;
+  const recent = hist.slice(-4).reverse();
+  return `<div class="slide"><div class="kick">How it changed</div><h3>${hist.length} recorded changes touched this domain</h3>
+    <div class="cols"><div>${svg}<div class="kbd" style="margin-top:6px">Changes per week, whole vault history on one axis</div></div>
+    <div class="side"><h4>Latest</h4><ul class="commits">${recent.map(c => `<li><span class="mono">${esc(c.d.slice(0, 10))}</span><span>${esc(c.s.replace(/^\w+(\([^)]*\))?:\s*/, ''))}</span></li>`).join('')}</ul></div></div>
+    <div class="foot"><span>Ontology Atlas · ${esc(dom.t)} · domain brief</span><span>${total} / ${total}</span></div></div>`;
+}
+
+/** A replay is a pure function of time, so scrubbing and playing show the same frames. */
+class Replay {
+  constructor(canvas, src) {
+    this.c = canvas; this.g = canvas.getContext('2d'); this.src = src; this.r = reach(src);
+    this.set = this.r.order.slice(0, 160);
+    this.inSet = new Set(this.set);
+    this.edges = edges.filter(e => this.inSet.has(e.A) && this.inSet.has(e.B));
+    this.HOP = 1300; this.lead = 700;
+    this.dur = this.lead + this.r.max * this.HOP + 1400;
+    this.t = 0; this.playing = false; this.onTick = null;
+    const xs = this.set.map(n => n.x), ys = this.set.map(n => n.y);
+    this.bb = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    this.chapters = [{ t: 0, label: `${src.t} changes` }];
+    for (let h = 1; h <= this.r.max; h++) {
+      const n = this.set.filter(x => this.r.hop.get(x) === h).length;
+      this.chapters.push({ t: this.lead + (h - 1) * this.HOP, label: `Hop ${h} · ${n} ${n === 1 ? 'concept' : 'concepts'} reached` });
+    }
+  }
+  size() { const r = this.c.getBoundingClientRect(); const d = Math.min(2, devicePixelRatio || 1); this.c.width = Math.round(r.width * d); this.c.height = Math.round(r.height * d); this.d = d; this.w = r.width; this.h = r.height; }
+  chapterAt(t) { let c = this.chapters[0]; for (const x of this.chapters) if (x.t <= t) c = x; return c; }
+  draw(t = this.t) {
+    const { g, w, h } = this; if (!w) return;
+    g.setTransform(this.d, 0, 0, this.d, 0, 0);
+    g.fillStyle = '#0b0c0d'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,0.025)'; g.lineWidth = 1;
+    for (let x = 0; x < w; x += 24) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, h); g.stroke(); }
+    for (let y = 0; y < h; y += 24) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(w, y + 0.5); g.stroke(); }
+    const pad = Math.max(28, w * 0.07), bb = this.bb;
+    const k = Math.min((w - pad * 2) / Math.max(1, bb.x1 - bb.x0), (h - pad * 2 - 30) / Math.max(1, bb.y1 - bb.y0), 2.2);
+    const ox = w / 2 - ((bb.x0 + bb.x1) / 2) * k, oy = (h - 30) / 2 + 6 - ((bb.y0 + bb.y1) / 2) * k;
+    const X = x => x * k + ox, Y = y => y * k + oy;
+    const arrive = n => { const hh = this.r.hop.get(n); return hh === 0 ? 0 : this.lead + (hh - 1) * this.HOP + this.HOP * 0.9; };
+    for (const e of this.edges) {
+      const c = ctrl(e);
+      const on = this.r.via.get(e.B) === e || this.r.via.get(e.A) === e;
+      g.strokeStyle = on && t >= Math.max(arrive(e.A), arrive(e.B)) ? 'rgba(130,129,255,0.45)' : 'rgba(208,214,224,0.08)';
+      g.lineWidth = 1; g.beginPath(); g.moveTo(X(e.A.x), Y(e.A.y)); g.quadraticCurveTo(X(c.x), Y(c.y), X(e.B.x), Y(e.B.y)); g.stroke();
+    }
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const n of this.set) {
+      const hh = this.r.hop.get(n); if (hh === 0) continue;
+      const t0 = this.lead + (hh - 1) * this.HOP, u = (t - t0) / (this.HOP * 0.9);
+      if (u <= 0 || u >= 1) continue;
+      const e = this.r.via.get(n), from = e.A === n ? e.B : e.A, rev = from === e.B, c = ctrl(e);
+      const ease = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+      const p = at(e, rev ? 1 - ease : ease, c), q = at(e, rev ? 1 - Math.max(0, ease - 0.3) : Math.max(0, ease - 0.3), c);
+      const grad = g.createLinearGradient(X(q.x), Y(q.y), X(p.x), Y(p.y));
+      grad.addColorStop(0, 'rgba(113,112,255,0)'); grad.addColorStop(1, 'rgba(200,199,255,0.9)');
+      g.strokeStyle = grad; g.lineWidth = 2.4; g.beginPath(); g.moveTo(X(q.x), Y(q.y)); g.lineTo(X(p.x), Y(p.y)); g.stroke();
+      const rg = g.createRadialGradient(X(p.x), Y(p.y), 0, X(p.x), Y(p.y), 10);
+      rg.addColorStop(0, 'rgba(240,240,255,0.95)'); rg.addColorStop(1, 'rgba(113,112,255,0)');
+      g.fillStyle = rg; g.beginPath(); g.arc(X(p.x), Y(p.y), 10, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+    g.textAlign = 'center';
+    for (const n of this.set) {
+      const a = arrive(n), since = t - a, reached = since >= 0;
+      const x = X(n.x), y = Y(n.y), r = n.k === 'domain' ? 8 : n.k === 'capability' ? 5 : 3;
+      if (reached && since < 1200) {
+        const glow = 1 - since / 1200;
+        g.save(); g.globalCompositeOperation = 'lighter';
+        const rg = g.createRadialGradient(x, y, r * 0.5, x, y, r + 22 * glow + 4);
+        rg.addColorStop(0, `rgba(170,168,255,${0.7 * glow})`); rg.addColorStop(1, 'rgba(113,112,255,0)');
+        g.fillStyle = rg; g.beginPath(); g.arc(x, y, r + 22 * glow + 4, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+      g.globalAlpha = reached ? 1 : 0.22;
+      g.fillStyle = reached ? (n === this.src ? '#f7f8f8' : '#c9c8ff') : '#62666d';
+      if (n.k === 'element') g.fillRect(x - r, y - r, r * 2, r * 2); else { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+      if (n === this.src) { g.strokeStyle = '#f7f8f8'; g.lineWidth = 1.2; g.beginPath(); g.arc(x, y, r + 5, 0, Math.PI * 2); g.stroke(); }
+      const hh = this.r.hop.get(n);
+      if (reached && (hh <= 1 || this.set.length < 18) && w > 300) {
+        g.font = `${n === this.src ? 600 : 500} ${w > 600 ? 12 : 10.5}px Geist, system-ui, sans-serif`;
+        g.lineWidth = 3; g.strokeStyle = '#0b0c0d'; g.strokeText(n.t, x, y + r + 13);
+        g.fillStyle = n === this.src ? '#f7f8f8' : '#d0d6e0'; g.fillText(n.t, x, y + r + 13);
+      }
+      g.globalAlpha = 1;
+    }
+    // burned-in chrome, as a real recording would carry it
+    g.textAlign = 'left'; g.font = '500 10px "Geist Mono", monospace'; g.fillStyle = '#8a8f98';
+    g.fillText('IMPACT REPLAY · SAME RULE AS THE SIGNAL KERNEL', 12, 18);
+    g.textAlign = 'right';
+    const reachedNow = this.set.filter(n => arrive(n) <= t).length;
+    g.fillText(`${reachedNow} / ${this.set.length} REACHED`, w - 12, 18);
+    g.textAlign = 'left';
+  }
+  seek(t) { this.t = Math.max(0, Math.min(this.dur, t)); this.draw(); this.onTick?.(); }
+  play() {
+    if (this.t >= this.dur) this.t = 0;
+    this.playing = true; let prev = performance.now();
+    const step = now => { if (!this.playing) return; this.t = Math.min(this.dur, this.t + (now - prev)); prev = now; this.draw(); this.onTick?.(); if (this.t >= this.dur) { this.playing = false; this.onTick?.(); return; } requestAnimationFrame(step); };
+    requestAnimationFrame(step); this.onTick?.();
+  }
+  pause() { this.playing = false; this.onTick?.(); }
+}
+const tc = ms => { const s = ms / 1000; return `${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(1).padStart(4, '0')}`; };
+const ICON = {
+  play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9.5-5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"/></svg>',
+  prev: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3L5 8l5 5"/></svg>',
+  next: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3l5 5-5 5"/></svg>',
+  x: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  expand: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9"/></svg>',
+  pulse: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2"/><path d="M3.8 3.8a6 6 0 0 0 0 8.4M12.2 3.8a6 6 0 0 1 0 8.4"/></svg>',
+};
+
+/** Mount the player controls for a Replay inside `host`. Returns a disposer. */
+function mountPlayer(host, node, big) {
+  host.innerHTML = `<div class="player"><canvas></canvas></div>
+    <div class="strip"><button class="ctl" data-act="play" aria-label="Play replay">${ICON.play}</button>
+    <div class="scrub" role="slider" tabindex="0" aria-label="Replay position"><div class="track"></div><div class="fill"></div><div class="knob"></div></div>
+    <span class="count" data-tc></span></div><div class="chapter" data-ch></div>`;
+  const rp = new Replay(host.querySelector('canvas'), node);
+  const scrub = host.querySelector('.scrub'), fill = host.querySelector('.fill'), knob = host.querySelector('.knob'), btn = host.querySelector('[data-act=play]');
+  for (const c of rp.chapters.slice(1)) { const i = document.createElement('div'); i.className = 'tick'; i.style.left = `${(c.t / rp.dur) * 100}%`; scrub.appendChild(i); }
+  rp.onTick = () => {
+    const f = rp.t / rp.dur; fill.style.width = `${f * 100}%`; knob.style.left = `${f * 100}%`;
+    host.querySelector('[data-tc]').textContent = `${tc(rp.t)} / ${tc(rp.dur)}`;
+    const ch = rp.chapterAt(rp.t); host.querySelector('[data-ch]').innerHTML = `<span class="mono">${tc(ch.t)}</span>  ${esc(ch.label)}`;
+    btn.innerHTML = rp.playing ? ICON.pause : ICON.play; btn.setAttribute('aria-label', rp.playing ? 'Pause replay' : 'Play replay');
+    scrub.setAttribute('aria-valuenow', Math.round(rp.t)); scrub.setAttribute('aria-valuemax', Math.round(rp.dur));
+  };
+  btn.onclick = () => rp.playing ? rp.pause() : rp.play();
+  const seekFrom = ev => { const r = scrub.getBoundingClientRect(); rp.seek(((ev.clientX - r.left) / r.width) * rp.dur); };
+  scrub.addEventListener('pointerdown', ev => { scrub.setPointerCapture(ev.pointerId); rp.pause(); seekFrom(ev); scrub.onpointermove = seekFrom; });
+  scrub.addEventListener('pointerup', () => { scrub.onpointermove = null; });
+  scrub.addEventListener('keydown', ev => { if (ev.key === 'ArrowRight') rp.seek(rp.t + 500); if (ev.key === 'ArrowLeft') rp.seek(rp.t - 500); if (ev.key === ' ') { ev.preventDefault(); btn.click(); } });
+  const ro = new ResizeObserver(() => { rp.size(); rp.draw(); });
+  ro.observe(rp.c);
+  rp.size(); rp.seek(big ? 0 : rp.lead + rp.HOP * 0.95); // the thumbnail rests on the first hop, like a poster frame
+  return { dispose: () => { rp.pause(); ro.disconnect(); }, rp };
+}
+
+function mountDeck(host, dom, big) {
+  const slides = deckFor(dom);
+  let i = 0;
+  host.innerHTML = `<div class="${big ? 'presenter' : ''}"><div class="frame slideframe"><div class="scaler"></div></div>
+    <div class="strip"><button class="ctl" data-d="-1" aria-label="Previous slide">${ICON.prev}</button><div class="dots"></div><span class="count" data-c></span><button class="ctl" data-d="1" aria-label="Next slide">${ICON.next}</button></div>
+    ${big ? '<div class="kbd" style="margin-top:6px">← → to move between slides</div>' : ''}</div>`;
+  const frameEl = host.querySelector('.frame'), sc = host.querySelector('.scaler'), dots = host.querySelector('.dots');
+  dots.innerHTML = slides.map((_, j) => `<i data-j="${j}" title="Slide ${j + 1}"></i>`).join('');
+  const show = j => {
+    i = (j + slides.length) % slides.length;
+    sc.innerHTML = slides[i];
+    host.querySelector('[data-c]').textContent = `${i + 1} / ${slides.length}`;
+    dots.querySelectorAll('i').forEach((d, k) => d.classList.toggle('on', k === i));
+  };
+  const scale = () => { sc.style.transform = `scale(${frameEl.clientWidth / 960})`; };
+  host.querySelectorAll('[data-d]').forEach(b => b.onclick = () => show(i + +b.dataset.d));
+  dots.onclick = ev => { if (ev.target.dataset.j) show(+ev.target.dataset.j); };
+  const key = ev => { if (ev.key === 'ArrowRight') show(i + 1); if (ev.key === 'ArrowLeft') show(i - 1); };
+  if (big) addEventListener('keydown', key);
+  const ro = new ResizeObserver(scale); ro.observe(frameEl);
+  show(0); scale();
+  return { dispose: () => { ro.disconnect(); removeEventListener('keydown', key); } };
+}
+
+function mountPage(host, n, big) {
+  if (big) {
+    const margin = n.notes.length
+      ? n.notes.map(([to, text]) => `<div class="note"><b>→ ${esc(byId.get(to)?.t || to)}</b>${inline(text)}</div>`).join('')
+      : '<div class="quiet">No relation notes on this page.</div>';
+    host.innerHTML = `<div class="docwrap"><div class="paperframe-big">${renderPaper(n).replace(/<div class="notes">[\s\S]*?<\/ol><\/div>/, '')}</div><aside class="margin"><h4>Why each relation exists</h4>${margin}</aside></div>`;
+    return { dispose() {} };
+  }
+  host.innerHTML = `<div class="frame paperframe"><div class="scaler">${renderPaper(n)}</div></div>`;
+  const frameEl = host.querySelector('.frame'), sc = host.querySelector('.scaler');
+  const scale = () => { sc.style.transform = `scale(${frameEl.clientWidth / 640})`; };
+  const ro = new ResizeObserver(scale); ro.observe(frameEl); scale();
+  return { dispose: () => ro.disconnect() };
+}
+
+function tabsFor(n) {
+  const r = reach(n);
+  const t = [{ id: 'page', label: 'Page' }];
+  if (n.k === 'domain') t.push({ id: 'deck', label: 'Deck', n: contents(n).filter(c => c.k === 'capability').length + 3 });
+  if (r.order.length > 1) t.push({ id: 'replay', label: 'Replay', n: tc(700 + r.max * 1300 + 1400).replace(/^00:/, '') });
+  return t;
+}
+function mountTab(host, n, id, big) {
+  if (id === 'deck') return mountDeck(host, n, big);
+  if (id === 'replay') return mountPlayer(host, n, big);
+  return mountPage(host, n, big);
+}
+const tabBar = (tabs, cur) => tabs.map(t => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === cur}">${t.label}${t.n ? ` <span class="n">${t.n}</span>` : ''}</button>`).join('');
+
+// ---------------------------------------------------------------- popover beside the node
+let pop = null, popMount = null, popTab = 'page';
+function select(n, tab) {
+  selected = n; hover = null;
+  closePop(true);
+  const tabs = tabsFor(n);
+  popTab = tab && tabs.some(t => t.id === tab) ? tab : n.k === 'domain' ? 'deck' : 'page';
+  pop = document.createElement('div');
+  pop.className = 'pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', n.t);
+  pop.innerHTML = `<button class="close" aria-label="Close">${ICON.x}</button>
+    <header><div class="kind"><b class="${n.k}"></b>${KIND[n.k]}</div><h2>${esc(n.t)}</h2>${n.p ? `<div class="path">${esc(n.p)}</div>` : ''}
+    <div class="rev">${n.revs} revision${n.revs === 1 ? '' : 's'} · last <span class="mono">${esc(n.last.h)}</span> on ${esc(n.last.d)}</div></header>
+    <div class="tabs" role="tablist">${tabBar(tabs, popTab)}</div><div class="tabbody" role="tabpanel"></div>
+    <footer><button class="btn primary" data-act="pulse">${ICON.pulse}Send a change</button><span class="grow"></span><button class="btn" data-act="expand">${ICON.expand}Open full view</button></footer>`;
+  stage.appendChild(pop);
+  const body = pop.querySelector('.tabbody');
+  popMount = mountTab(body, n, popTab, false);
+  pop.querySelector('.close').onclick = () => closePop();
+  pop.querySelector('.tabs').onclick = ev => {
+    const b = ev.target.closest('[data-tab]'); if (!b) return;
+    popTab = b.dataset.tab; pop.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === b));
+    popMount?.dispose(); popMount = mountTab(body, n, popTab, false);
+  };
+  pop.querySelector('[data-act=pulse]').onclick = () => fire(n);
+  pop.querySelector('[data-act=expand]').onclick = () => openViewer(n, popTab);
+  placePop(true);
+  fire(n, { strength: 0.7, cap: 40 });
+}
+function closePop(keepSel) {
+  popMount?.dispose(); popMount = null;
+  pop?.remove(); pop = null;
+  if (!keepSel) selected = null;
+}
+function placePop(first) {
+  if (!pop || !selected || innerWidth <= 640) return;
+  const x = sx(selected.x), y = sy(selected.y), pw = pop.offsetWidth, ph = pop.offsetHeight, gap = R(selected) * cam.k + 18;
+  const right = x + gap + pw <= W - 12 || x < W / 2;
+  let left = right ? x + gap : x - gap - pw;
+  left = Math.max(12, Math.min(W - pw - 12, left));
+  const top = Math.max(12, Math.min(H - ph - 12, y - 64));
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+  if (first) { pop.style.setProperty('--ox', `${right ? 0 : pw}px`); pop.style.setProperty('--oy', `${y - top}px`); }
+}
+
+// ---------------------------------------------------------------- full view (explicit action)
+let viewer = null, viewMount = null, lastFocus = null;
+function openViewer(n, tab) {
+  lastFocus = document.activeElement;
+  const tabs = tabsFor(n);
+  viewer = document.createElement('div');
+  viewer.className = 'scrim';
+  viewer.innerHTML = `<div class="viewer" role="dialog" aria-modal="true" aria-label="${esc(n.t)}"><div class="vhead"><div class="kind"><b class="${n.k}"></b>${KIND[n.k]}</div><h2>${esc(n.t)}</h2>
+    <div class="tabs" role="tablist">${tabBar(tabs, tab)}</div><button class="close" aria-label="Close full view">${ICON.x}</button></div><div class="vbody"></div></div>`;
+  document.body.appendChild(viewer);
+  const body = viewer.querySelector('.vbody');
+  viewMount = mountTab(body, n, tab, true);
+  viewer.querySelector('.tabs').onclick = ev => {
+    const b = ev.target.closest('[data-tab]'); if (!b) return;
+    viewer.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === b));
+    viewMount?.dispose(); viewMount = mountTab(body, n, b.dataset.tab, true);
+  };
+  viewer.querySelector('.close').onclick = closeViewer;
+  viewer.addEventListener('pointerdown', ev => { if (ev.target === viewer) closeViewer(); });
+  viewer.querySelector('.close').focus();
+}
+function closeViewer() { viewMount?.dispose(); viewMount = null; viewer?.remove(); viewer = null; lastFocus?.focus?.(); }
+addEventListener('keydown', ev => { if (ev.key === 'Escape') { if (viewer) closeViewer(); else if (pop) closePop(); } });
+
+// ---------------------------------------------------------------- find
+const dl = $('#concepts');
+dl.innerHTML = nodes.slice().sort((a, b) => a.t.localeCompare(b.t)).map(n => `<option value="${esc(n.t)}">${KIND[n.k]}</option>`).join('');
+$('#find').addEventListener('change', ev => {
+  const n = nodes.find(x => x.t.toLowerCase() === ev.target.value.trim().toLowerCase());
+  if (n) { focusNode(n); select(n); ev.target.blur(); }
+});
+
+// ---------------------------------------------------------------- history transport (real commits)
+const commits = D.commits;
+const tl = $('#timeline'), cap = $('#caption');
+const times = commits.map(c => +new Date(c.d));
+const T0 = Math.min(...times), T1 = Math.max(...times);
+const xOf = t => 1 + ((t - T0) / (T1 - T0)) * 98;
+tl.setAttribute('aria-valuemax', commits.length);
+commits.forEach((c, i) => {
+  const el = document.createElement('div');
+  el.className = 't'; el.style.left = `${xOf(times[i])}%`; el.style.height = `${6 + Math.min(12, c.n.length * 1.4)}px`;
+  el.title = `${c.h} · ${c.d.slice(0, 10)} · ${c.s}`;
+  tl.appendChild(el);
+});
+for (const t of [T0, (T0 + T1) / 2, T1]) {
+  const l = document.createElement('div'); l.className = 'lab'; l.style.left = `${xOf(t)}%`;
+  l.textContent = new Date(t).toISOString().slice(0, 10); tl.appendChild(l);
+}
+const ticks = [...tl.querySelectorAll('.t')];
+let cur = commits.length - 1, playing = false, timer = null;
+function showCommit(i, { wave = true } = {}) {
+  cur = i;
+  const c = commits[i];
+  ticks.forEach((t, j) => { t.classList.toggle('done', j < i); t.classList.toggle('cur', j === i); });
+  tl.setAttribute('aria-valuenow', i + 1); tl.setAttribute('aria-valuetext', `Change ${i + 1} of ${commits.length}: ${c.s}`);
+  cap.innerHTML = `<span class="h">${esc(c.h.slice(0, 7))}</span><span class="d">${esc(c.d.slice(0, 10))}</span><span class="s">${esc(c.s)}</span><span class="n">${c.n.length} page${c.n.length === 1 ? '' : 's'} · ${i + 1}/${commits.length}</span>`;
+  if (!wave) return;
+  const srcs = c.n.map(s => byId.get(s)).filter(Boolean);
+  srcs.forEach((n, k) => { n.touch = 1; fire(n, { delay: Math.min(900, k * 40), strength: srcs.length > 8 ? 0.75 : 1, cap: Math.max(8, Math.round(160 / srcs.length)) }); });
+}
+function setPlaying(on) {
+  playing = on; clearTimeout(timer);
+  $('#playIcon').innerHTML = on ? '<path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"/>' : '<path d="M4 2.5v11l9.5-5.5z"/>';
+  $('#play').setAttribute('aria-label', on ? 'Pause the change history' : 'Play the change history');
+  if (!on) return;
+  const step = () => { if (!playing) return; if (cur >= commits.length - 1) { setPlaying(false); return; } showCommit(cur + 1); timer = setTimeout(step, 2100); };
+  if (cur >= commits.length - 1) { cur = -1; }
+  step();
+}
+$('#play').onclick = () => setPlaying(!playing);
+function commitAtX(clientX) {
+  const r = tl.getBoundingClientRect(), f = ((clientX - r.left) / r.width) * 100;
+  let best = 0, bd = Infinity; times.forEach((t, i) => { const d = Math.abs(xOf(t) - f); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+tl.addEventListener('pointerdown', ev => { setPlaying(false); showCommit(commitAtX(ev.clientX)); });
+tl.addEventListener('keydown', ev => {
+  if (ev.key === 'ArrowRight' && cur < commits.length - 1) { setPlaying(false); showCommit(cur + 1); }
+  if (ev.key === 'ArrowLeft' && cur > 0) { setPlaying(false); showCommit(cur - 1); }
+});
+
+// ---------------------------------------------------------------- boot
+$('#stats').textContent = `${nodes.length} concepts · ${edges.length} relations · ${commits.length} recorded changes · this repository`;
+resize();
+Object.assign(cam, fit());
+new ResizeObserver(() => { resize(); }).observe(stage);
+requestAnimationFrame(t => { last = t; frame(t); });
+showCommit(commits.length - 1, { wave: false });
+// Open in a working state: the most-revised capability, its real page beside it, and the
+// latest recorded change travelling through the map.
+setTimeout(() => {
+  showCommit(commits.length - 1);
+  if (innerWidth > 640) {
+    const start = nodes.filter(n => n.k === 'capability').sort((a, b) => b.revs - a.revs)[0];
+    focusNode(start); select(start);
+  }
+}, REDUCED ? 0 : 500);
+})();
+</script>

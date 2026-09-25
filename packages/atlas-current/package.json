@@ -1,0 +1,24 @@
+{
+  "name": "atlas-current",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A time-aware, three.js picture of an Atlas vault and its Git history, built and served locally.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "atlas-current": "bin/atlas-current.mjs"
+  },
+  "scripts": {
+    "build": "node bin/atlas-current.mjs build",
+    "serve": "node bin/atlas-current.mjs serve",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "d3": "7.9.0",
+    "lucide": "1.47.0",
+    "three": "0.185.1"
+  }
+}

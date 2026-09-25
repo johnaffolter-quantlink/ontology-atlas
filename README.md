@@ -640,6 +640,12 @@ To carry Atlas into agent sessions in any repository, `pnpm plugin:build` builds
 plugin (the MCP server plus read-before-work and propose-after-change skills) and a marketplace
 for it under `.tmp/atlas-plugin`; see the [MCP README](mcp/README.md) for how it finds a vault.
 
+To see a vault and its Git history as a local, time-aware picture (map, tiers, a commit-by-commit
+time view with a change forecast, and a three.js studio), `pnpm current:build` writes
+`.atlas-current/` from the repository on your machine and `pnpm current:audit` prints the forecast's
+checks; the plugin carries the same tool as `/atlas-current`. See
+[Atlas Current](packages/atlas-current/README.md). `pnpm test:current` runs its tests.
+
 ## Documentation
 
 **Use it:** [hosted guide](https://ontologyatlas.com/en/guide/) ·

@@ -139,3 +139,6 @@ sweep*/
 !docs/audits/analysis-acp-2026-09-05/*.png
 !docs/benchmark/results/2026-09-10-wiki-review-*.png
 !docs/benchmark/results/2026-09-11-library-*.png
+
+# Atlas Current build output (packages/atlas-current)
+.atlas-current/

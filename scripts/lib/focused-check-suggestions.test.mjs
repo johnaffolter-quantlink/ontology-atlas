@@ -982,6 +982,14 @@ describe('focused check suggestions', () => {
     }
   });
 
+  it('suggests the Atlas Current tests, and the plugin build that carries it, when the package changes', () => {
+    for (const file of ['packages/atlas-current/extract/forecast.mjs', 'packages/atlas-current/app/script.js']) {
+      const commands = domainCommands(suggestFocusedChecks([file]));
+      assert.ok(commands.includes('pnpm test:current'), file);
+      assert.ok(commands.includes('pnpm test:plugin'), file);
+    }
+  });
+
   it('suggests docs and package contracts for GitHub quality-gate files', () => {
     const result = suggestFocusedChecks([
       '.github/workflows/release-macos.yml',

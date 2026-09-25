@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
-import { prepareMcpDependencies, prepareWorktree } from './prepare-worktree.mjs';
+import { findMissingCurrentDependencies, prepareCurrentDependencies, prepareMcpDependencies, prepareWorktree } from './prepare-worktree.mjs';
 
 const SOURCE = new URL('..', import.meta.url).pathname;
 const PREPARE = JSON.parse(readFileSync(join(SOURCE, 'package.json'), 'utf8')).scripts.prepare;
@@ -93,6 +93,21 @@ test('prepare installs locked MCP dependencies only when they are missing, and n
   assert.equal(failed, 0);
   assert.deepEqual(calls.at(-1), ['pnpm']);
   assert.match(written, /@modelcontextprotocol\/core.*pnpm --dir mcp install --frozen-lockfile/);
+});
+
+test('prepare installs Atlas Current libraries only when they are missing, and only warns on failure', () => {
+  const calls = [];
+  const spawn = (command, args, options) => { calls.push([command, args, options.cwd]); return { status: 0 }; };
+  const env = { npm_execpath: '/pnpm/bin/pnpm.cjs' };
+  assert.equal(prepareCurrentDependencies({ root: '/tmp/repo', spawn, env, missing: () => [] }), 0);
+  assert.deepEqual(calls, []);
+  assert.equal(prepareCurrentDependencies({ root: '/tmp/repo', spawn, env, missing: () => ['three'] }), 0);
+  assert.deepEqual(calls, [[process.execPath, ['/pnpm/bin/pnpm.cjs', '--dir', 'packages/atlas-current', 'install', '--frozen-lockfile'], '/tmp/repo']]);
+  let written = '';
+  prepareCurrentDependencies({ root: '/tmp/repo', env: {}, missing: () => ['d3'], spawn: () => ({ status: 1 }), stderr: { write: (t) => { written += t; } } });
+  assert.match(written, /Atlas Current dependencies \(d3\).*pnpm --dir packages\/atlas-current install --frozen-lockfile/);
+  // a checkout without the package needs nothing
+  assert.deepEqual(findMissingCurrentDependencies('/nonexistent'), []);
 });
 
 test('parallel worktrees merge immutable records and every checkout materializes ignored outputs', () => {

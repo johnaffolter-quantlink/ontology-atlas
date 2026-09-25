@@ -87,7 +87,14 @@ const RULES = [
     // vault, so a change here can point every installed session at the wrong folder.
     command: 'pnpm test:plugin',
     reason: 'the Claude Code plugin changed — launcher vault resolution, manifest, skills, or its build',
-    matches: [/^plugins\/ontology-atlas\//, /^scripts\/(?:build-atlas-plugin|atlas-plugin\.test)\.mjs$/],
+    matches: [/^plugins\/ontology-atlas\//, /^scripts\/(?:build-atlas-plugin|atlas-plugin\.test)\.mjs$/, /^packages\/atlas-current\//],
+  },
+  {
+    // Atlas Current reads Git history and writes a page other people open; its forecast numbers are
+    // only as good as the extraction, tie rule and escaping these tests pin.
+    command: 'pnpm test:current',
+    reason: 'Atlas Current changed — extraction, forecast and audit, page assembly, or serve',
+    matches: [/^packages\/atlas-current\//],
   },
   {
     // The ecosystem channel is two artifacts and one metadata entry, and the
