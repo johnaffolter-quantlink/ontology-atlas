@@ -232,6 +232,17 @@ test('every currently tracked path belongs to a known impact namespace', () => {
   assert.deepEqual(buildImpactPlan({ files }).unknownPaths, []);
 });
 
+// 2026-09-25: the plugin landed with plugins/ unknown, which failed this whole file closed until a
+// later change noticed; both folders now plan the tests that own them.
+test('plugin and package folders are known and plan their own tests', () => {
+  const current = buildImpactPlan({ files: ['packages/atlas-current/extract/forecast.mjs'] });
+  assert.deepEqual(current.unknownPaths, []);
+  assert.ok(current.lanes.gates.commands.includes('pnpm test:current'));
+  const plugin = buildImpactPlan({ files: ['plugins/ontology-atlas/launch.mjs'] });
+  assert.deepEqual(plugin.unknownPaths, []);
+  assert.ok(plugin.lanes.gates.commands.includes('pnpm test:plugin'));
+});
+
 // 2026-09-01 review regressions: four formerly-unconditional gates ran on no
 // pull request, rendering .ts in ui/ segments planned zero browser evidence,
 // two MCP-spawning smokes missed the needsMcp flag, and PLANNER_SURFACE was a
