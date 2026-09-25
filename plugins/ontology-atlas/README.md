@@ -12,6 +12,11 @@ one tool, `atlas_status`, that says where it looked and how to start a vault. It
 
 ## Install
 
+It also carries Atlas Current (`current/`, staged from `packages/atlas-current` by the build): the
+`atlas-current` skill and `/atlas-current` command build a local, time-aware view of the project's
+vault and Git history and serve it on 127.0.0.1, and run the forecast audit before any forecast
+number is repeated. No permission is granted in advance; the host asks before each command.
+
 This directory holds the plugin's own files. `pnpm plugin:build` adds the server (unpacked from
 the boot-verified `.mcpb` bundle) and writes a marketplace next to it:
 

@@ -1,11 +1,20 @@
 {
   "name": "ontology-atlas",
   "displayName": "Ontology Atlas",
-  "description": "Your codebase's reviewed meaning, in every agent session: the Atlas MCP server for the project's vault, plus skills to read it before work and propose updates after.",
-  "author": { "name": "Ontology Atlas" },
+  "description": "Your codebase's reviewed meaning, in every agent session: the Atlas MCP server for the project's vault, skills to read it before work and propose updates after, and Atlas Current, a local time-aware view of the vault and its history.",
+  "author": {
+    "name": "Ontology Atlas"
+  },
   "repository": "https://github.com/johnaffolter-quantlink/ontology-atlas",
   "license": "MIT",
-  "keywords": ["ontology", "codebase", "mcp", "knowledge-graph", "markdown"],
+  "keywords": [
+    "ontology",
+    "codebase",
+    "mcp",
+    "knowledge-graph",
+    "markdown"
+  ],
   "mcpServers": "./.mcp.json",
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "commands": "./commands/"
 }

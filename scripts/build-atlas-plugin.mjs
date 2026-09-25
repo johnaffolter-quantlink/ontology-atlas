@@ -12,14 +12,19 @@
  * files (manifest, launcher, skills) live in plugins/ontology-atlas/; the built server never goes
  * into Git, so there is no second copy of the server to drift.
  *
- * fail-closed, three proofs:
+ * It also carries Atlas Current (packages/atlas-current) in `current/`, with only the library files a
+ * local build needs, so the view travels with the plugin and works offline.
+ *
+ * fail-closed, four proofs:
  *   1. `claude plugin validate` accepts the plugin and the marketplace (skipped, and said so, when
  *      the claude CLI is absent);
  *   2. a project with no vault gets exactly one tool, `atlas_status`, naming where it looked;
  *   3. a project whose vault is ./atlas gets the full server, and `connection_info` reports that
- *      vault's absolute path even though the process starts in another directory.
+ *      vault's absolute path even though the process starts in another directory;
+ *   4. the plugin's own copy of Atlas Current builds that project from its Git history, offline.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { vendorFiles } from '../packages/atlas-current/lib/assemble.mjs';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -27,6 +32,7 @@ import path from 'node:path';
 const ROOT = process.cwd();
 const SOURCE = path.join(ROOT, 'plugins', 'ontology-atlas');
 const SAMPLE_VAULT = path.join(ROOT, 'samples', 'storefront');
+const CURRENT = path.join(ROOT, 'packages', 'atlas-current');
 const args = Object.fromEntries(
   process.argv.slice(2).filter((a) => a.startsWith('--')).map((a) => {
     const [k, ...v] = a.slice(2).split('=');
@@ -79,6 +85,46 @@ function assemble(bundle) {
     )}\n`,
   );
   return version;
+}
+
+// Atlas Current: its source, plus the library files a local build copies, laid out as node_modules.
+function stageCurrent() {
+  const dest = path.join(PLUGIN, 'current');
+  for (const part of ['bin', 'lib', 'extract', 'app', 'package.json', 'README.md']) {
+    const src = path.join(CURRENT, part);
+    if (!existsSync(src)) fail(`packages/atlas-current/${part} is missing`);
+    cpSync(src, path.join(dest, part), { recursive: true });
+  }
+  const { files, missing } = vendorFiles();
+  if (missing.length) fail(`Atlas Current libraries missing (${missing.join(', ')}); run \`pnpm --dir packages/atlas-current install\``);
+  for (const f of files) {
+    const to = path.join(dest, 'node_modules', f.rel);
+    mkdirSync(path.dirname(to), { recursive: true });
+    cpSync(f.src, to);
+  }
+  note(`Atlas Current staged with ${files.length} library files`);
+}
+
+function proveCurrent() {
+  const project = mkdtempSync(path.join(tmpdir(), 'atlas-plugin-current-'));
+  const out = path.join(project, '.atlas-current');
+  try {
+    cpSync(SAMPLE_VAULT, path.join(project, 'atlas'), { recursive: true });
+    const env = { ...process.env, GIT_AUTHOR_NAME: 'atlas', GIT_AUTHOR_EMAIL: 'atlas@example.invalid', GIT_COMMITTER_NAME: 'atlas', GIT_COMMITTER_EMAIL: 'atlas@example.invalid' };
+    const git = (...a) => execFileSync('git', ['-C', project, ...a], { env, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'feat: sample vault');
+    const bin = path.join(PLUGIN, 'current', 'bin', 'atlas-current.mjs');
+    // started from tmpdir with an empty NODE_PATH: it must resolve everything inside the plugin
+    const res = spawnSync(process.execPath, [bin, 'build', `--repo=${project}`, `--out=${out}`], { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, NODE_PATH: '' } });
+    if (res.status !== 0) fail(`Atlas Current build from the plugin failed:\n${res.stdout}${res.stderr}`);
+    for (const f of ['index.html', 'vendor/three/build/three.module.min.js', 'vendor/d3.min.js', 'vendor/lucide.min.js']) {
+      if (!existsSync(path.join(out, f))) fail(`Atlas Current build from the plugin did not write ${f}`);
+    }
+    if (!readFileSync(path.join(out, 'index.html'), 'utf8').includes('id="atlas-forecast"')) fail('Atlas Current page has no forecast slot');
+    note('Atlas Current: the plugin copy built a Git project offline ✓');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 }
 
 function validateWithClaude() {
@@ -172,8 +218,10 @@ async function proveSeededVault() {
 }
 
 const version = assemble(bundlePath());
+stageCurrent();
 validateWithClaude();
 await proveNoVault();
 await proveSeededVault();
+proveCurrent();
 note(`built ${OUT} (plugin ontology-atlas ${version})`);
 note(`try it: claude --plugin-dir ${PLUGIN}`);
